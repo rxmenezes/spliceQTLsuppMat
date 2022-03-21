@@ -1,0 +1,486 @@
+---
+title: "Analysis GEUVADIS LLS results"
+author: "Renee Menezes"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+  toc_depth: 3  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r def.dirs}
+
+mydir.scripts <- "./scripts"
+mydir.output <-  "./output"
+mydir.data <- "./data"
+mydir.output.perGene <- mydir.output
+source(paste0(mydir.scripts, "/functions_wilcoxon_t_logistic_fdr.R"))
+
+```
+
+
+## Results GEUVADIS and LLS
+
+### Data used
+
+The LLS data was produced as part of the [BBMRI](http://www.bbmri.nl) project. Data can be requested for registered users via their [website](https://www.bbmri.nl/node/25).
+
+The GEUVADIS data has been pre-processed again in the same way as the LLS data, and analyses were rerun. The original GEUVADIS data can be obtained for example from the [EBI](https://www.ebi.ac.uk/arrayexpress/experiments/E-GEUV-1/).
+
+The script used to install the `spliceQTL` package, obtain SNP and exon-level data, and produce objects needed, can be found on Armin Rauschenberger's own [github](https://github.com/rauschenberger/spliceQTL/blob/master/vignettes/code.Rmd] page. Lines 1-131 refer to installing, preprocessing and running analyses.
+In the remainder results are explored. Some of the results in the article are included below.
+
+Researchers willing to perform these analyses for other datasets are encouraged to use the chunks in that report.
+
+Below we reproduce some of the graphs presented in our article, loading results obtained.
+
+
+### Results
+
+The spliceQTL test was run in the same way as done for the analysis of the GEUVADIS data (with the original pre-processing). Here we load the results of that analysis.
+
+
+```{r load.results.bbmri.geuv}
+vchrs <- 1:22
+mtable <- matrix(0, nrow = length(vchrs), ncol = 4)
+colnames(mtable) <- c("none", "onlyGEU", "onlyLLS", "both")
+rownames(mtable) <- vchrs
+mtable <- data.frame(mtable)
+table.g <- table.l <- table.go <- table.lo <- NULL
+mlist <- list()
+for(chr in vchrs)
+  {
+   load(paste0(mydir.data, "/pvalNew.Geuvadis.chr", chr, ".RData")) # pvalue
+   a <- pvalue; pvalue <- NA
+   a <- data.frame(a, chr = rep(chr, length(a)))
+   table.g <- rbind(table.g, a)
+   load(paste0(mydir.data, "/pvalNew.LLS.chr", chr, ".RData")) # pvalue
+   b <- pvalue; pvalue <- NA
+   b <- data.frame(b, chr = rep(chr, length(b)))
+   table.l <- rbind(table.l, b)
+
+  # filter tests (trial)
+  names <- intersect(rownames(a),rownames(b))
+  a <- a[names, ]
+  b <- b[names, ]
+
+  # If desired, compute correlations between results of the 2 datasets
+  if(FALSE){ 
+  mtable$cor[ chr ] <- round(stats::cor(-log(a[, 1]), -log(b[, 1]), method="pearson"), digits=2)
+  mtable$cor.test[ chr ] <- signif(stats::cor.test(-log(a[, 1]), -log(b[, 1]), method="pearson")$p.value, digits=2)
+  }
+  
+  # significance
+  a <- stats::p.adjust(a[, 1]) < 0.05
+  b <- stats::p.adjust(b[, 1]) < 0.05
+  mtable$none[ rownames(mtable) == chr ] <- sum(!a & !b, na.rm = TRUE)
+  mtable$onlyGEU[ rownames(mtable) == chr ] <- sum(a & !b, na.rm = TRUE)
+  mtable$onlyLLS[ rownames(mtable) == chr ] <- sum(!a & b, na.rm = TRUE)
+  mtable$both[ rownames(mtable) == chr ] <- sum(a & b, na.rm = TRUE)
+}
+save(table.g, file=paste0(mydir.output, "/table_allpvalues_GEUV.RData"))
+save(table.l, file=paste0(mydir.output, "/table_allpvalues_LLS.RData"))
+# Tables with probes in the overlap are saved in the next chunk,
+# after computing the FDR
+save(mtable, file=paste0(mydir.output, "/table_cross_GEUV_LLS.RData"))
+
+```
+
+```{r load.obj.tables, eval = FALSE}
+load(paste0(mydir.output, "/table_allpvalues_GEUV.RData")) # table.g
+load(paste0(mydir.output, "/table_allpvalues_LLS.RData")) # table.l
+load(paste0(mydir.output, "table_cross_GEUV_LLS.RData")) # mtable
+```
+
+```{r plot.pvalues.fdr, fig.width=12, fig.height=4}
+mcut <- 0.05
+dname <- "GEUVADIS"
+mytable <- table.g
+fdr <- NULL
+for(chr in vchrs) 
+{
+  mname <- paste(dname, "Chr", chr)
+  vfdr <- adj.bhfdr(mytable[mytable$chr == chr, 1], myvar = mname, cutoff = mcut)
+  fdr <- c(fdr, vfdr)
+}
+mytable$fdr <- fdr
+table.g <- mytable
+
+###
+
+dname <- "LLS"
+mytable <- table.l
+fdr <- NULL
+for(chr in vchrs) 
+{
+  mname <- paste(dname, "Chr", chr)
+  vfdr <- adj.bhfdr(mytable[mytable$chr == chr, 1], myvar = mname, cutoff = mcut)
+  fdr <- c(fdr, vfdr)
+}
+mytable$fdr <- fdr
+table.l <- mytable
+
+
+names.o <- intersect(rownames(table.l),rownames(table.g))
+table.lo <- table.l[names.o, ]
+table.go <- table.g[names.o, ]
+save(table.go, file=paste0(mydir.output, "/table_overlappvalues_GEUV.RData"))
+save(table.lo, file=paste0(mydir.output, "/table_overlappvalues_LLS.RData"))
+
+```
+
+In the code chunk below plots of the FDRs per chromosome and dataset are produced. These make use of all results per dataset, not the results from the overlapping genes. Graphs are saved into a pdf file.
+
+
+
+```{r plot.fdr.pdf, results = 'hide'}
+myn <- "GEUV"
+myd <- table.g
+pdf(paste0(mydir.output, "/plot_fdr_allChrs_", myn, ".pdf"), width = 8, height = 12)
+par(mfrow = c(6, 4), mar = c(5, 4, 0.5, 0.5))
+for(chr in vchrs)
+{ 
+   mf <- myd$fdr[myd$chr == chr]
+   plot(sort(mf), type = "l", col = "blue", xlab = "genes", ylab = "FDR")
+   mfs <- mf[mf <= 0.05]
+   lines(sort(mfs), col = "red", lwd = 2)
+   segments(0, 0.05, length(mf), 0.05, lty = "dashed", col = "gray")
+   text(0, 0.7, labels = paste(length(mfs), "FDR<0.05"), pos = 4, cex = .8)
+   text(0, 0.9, labels = paste("chr", chr), pos = 4, cex = .8)
+}
+dev.off()
+
+myn <- "LLS"
+myd <- table.l
+pdf(paste0(mydir.output, "/plot_fdr_allChrs_", myn, ".pdf"), width = 8, height = 12)
+par(mfrow = c(6, 4), mar = c(5, 4, 0.5, 0.5))
+for(chr in vchrs)
+{ 
+   mf <- myd$fdr[myd$chr == chr]
+   plot(sort(mf), type = "l", col = "blue", xlab = "genes", ylab = "FDR")
+   mfs <- mf[mf <= 0.05]
+   lines(sort(mfs), col = "red", lwd = 2)
+   segments(0, 0.05, length(mf), 0.05, lty = "dashed", col = "gray")
+   text(0, 0.7, labels = paste(length(mfs), "FDR<0.05"), pos = 4, cex = .8)
+   text(0, 0.9, labels = paste("chr", chr), pos = 4, cex = .8)
+}
+dev.off()
+
+```
+
+
+Tables of significant results from the overlapping genes. First without multiple testing correction, and testing for association between the two test results. This is supplementary figure 10.
+
+```{r plot.pvals.lls.geuv, fig.width = 8, fig.height = 8}
+table.l <- table.l[rownames(table.l) %in% rownames(table.g), ]
+table.g <- table.g[rownames(table.g) %in% rownames(table.l), ]
+#all(rownames(table.g) == rownames(table.l))
+dcols <- densCols(-log(table.g$a), -log(table.l$b))
+plot(-log(table.g$a), -log(table.l$b), pch = 20, col = dcols,
+     xlab = "Geuvadis", ylab = "LLS", main = "SpliceQTL p-values per gene")
+abline(h = 3, lty = "dashed", col = "gray", lwd = 2)
+abline(v = 3, lty = "dashed", col = "gray", lwd = 2)
+```
+
+
+Tables, no multiple testing correction. Different thresholds.
+
+```{r def.tables}
+vth <- c(0.001, 0.005, 0.01)
+for(th in vth)
+{
+   myt <- table(table.g$a <= th, table.l$b <= th)
+   print(myt)
+   print(chisq.test(myt)) # test of marginal independence, not quite what we want
+   print(mcnemar.test(myt)) #test of symmetry
+}
+```
+
+```{r def.tables2}
+vth <- c(0.001, 0.005, 0.01)
+for(th in vth)
+{
+   myt <- table(table.g$a <= th, table.l$b <= th)
+   print(myt)
+ #  print(chisq.test(myt)) # test of marginal independence, not quite what we want
+ #  print(mcnemar.test(myt)) #test of symmetry
+   myt <- 100*myt/sum(myt)
+   print(chisq.test(myt)) # test of marginal independence, not quite what we want
+   print(mcnemar.test(myt)) #test of symmetry
+}
+```
+
+The correlation between the two test results (on the -log scale) is `r cor(-log(table.g$a), -log(table.l$b), method = "p")` for Pearson and `r cor(-log(table.g$a), -log(table.l$b), method = "s")` for Spearman.
+
+
+Now with multiple testing correction.
+
+```{r tables.fdrs}
+table(table.go[, "fdr"] <= 0.05, table.lo[, "fdr"] <= 0.05)
+for(chr in vchrs) 
+   {
+     print(chr)
+     print(table(table.go[table.go$chr == chr, "fdr"] <= 0.05, table.lo[table.lo$chr == chr, "fdr"] <= 0.05))
+}
+```
+
+
+Now Manhattan plots are produced, saved into pdfs for 5 consecutive chromosomes at a time. These correspond to supplementary figures 11--15.
+
+```{r plot.manhattan.both.pdf, results = 'hide'}
+# This uses the overlap
+dname <- "GEUVADIS and LLS"
+pdf(paste0(mydir.output, "/plot_manhattan_both_1.pdf"), width = 8, height = 12)
+par(mfrow = c(5, 1), mar = c(2, 3, 3, 1))
+for(chr in vchrs[1:5]) 
+{
+   mname <- paste(dname, "Chr", chr)
+   a <- table.go[table.go$chr == chr, "fdr"]
+   b <- table.lo[table.lo$chr == chr, "fdr"]
+   graphics::plot.new()
+   graphics::plot.window(xlim=c(0.5, length(a)+0.5), ylim=c(-1,1)*max(-log10(c(a, b))))
+   graphics::box()
+   graphics::axis(side=1)
+   graphics::axis(side=2)
+   graphics::segments(x0=seq_along(a), y0=0, y1=-log10(a), col="darkred")
+   graphics::segments(x0=seq_along(b), y0=0, y1=log10(b), col="darkblue")
+   graphics::abline(h=0, col="grey")
+   title(paste("Chr", chr, "FDR - Geuvadis (red) and LLS (blue)"))
+}
+dev.off()
+
+pdf(paste0(mydir.output, "/plot_manhattan_both_2.pdf"), width = 8, height = 12)
+par(mfrow = c(5, 1), mar = c(2, 3, 3, 1))
+for(chr in vchrs[6:10]) 
+{
+   mname <- paste(dname, "Chr", chr)
+   a <- table.go[table.go$chr == chr, "fdr"]
+   b <- table.lo[table.lo$chr == chr, "fdr"]
+   graphics::plot.new()
+   graphics::plot.window(xlim=c(0.5, length(a)+0.5), ylim=c(-1,1)*max(-log10(c(a, b))))
+   graphics::box()
+   graphics::axis(side=1)
+   graphics::axis(side=2)
+   graphics::segments(x0=seq_along(a), y0=0, y1=-log10(a), col="darkred")
+   graphics::segments(x0=seq_along(b), y0=0, y1=log10(b), col="darkblue")
+   graphics::abline(h=0, col="grey")
+   title(paste("Chr", chr, "FDR - Geuvadis (red) and LLS (blue)"))
+}
+dev.off()
+
+pdf(paste0(mydir.output, "/plot_manhattan_both_3.pdf"), width = 8, height = 12)
+par(mfrow = c(5, 1), mar = c(2, 3, 3, 1))
+for(chr in vchrs[11:15]) 
+{
+   mname <- paste(dname, "Chr", chr)
+   a <- table.go[table.go$chr == chr, "fdr"]
+   b <- table.lo[table.lo$chr == chr, "fdr"]
+   graphics::plot.new()
+   graphics::plot.window(xlim=c(0.5, length(a)+0.5), ylim=c(-1,1)*max(-log10(c(a, b))))
+   graphics::box()
+   graphics::axis(side=1)
+   graphics::axis(side=2)
+   graphics::segments(x0=seq_along(a), y0=0, y1=-log10(a), col="darkred")
+   graphics::segments(x0=seq_along(b), y0=0, y1=log10(b), col="darkblue")
+   graphics::abline(h=0, col="grey")
+   title(paste("Chr", chr, "FDR - Geuvadis (red) and LLS (blue)"))
+}
+dev.off()
+
+pdf(paste0(mydir.output, "/plot_manhattan_both_4.pdf"), width = 8, height = 12)
+par(mfrow = c(5, 1), mar = c(2, 3, 3, 1))
+for(chr in vchrs[16:20]) 
+{
+   mname <- paste(dname, "Chr", chr)
+   a <- table.go[table.go$chr == chr, "fdr"]
+   b <- table.lo[table.lo$chr == chr, "fdr"]
+   graphics::plot.new()
+   graphics::plot.window(xlim=c(0.5, length(a)+0.5), ylim=c(-1,1)*max(-log10(c(a, b))))
+   graphics::box()
+   graphics::axis(side=1)
+   graphics::axis(side=2)
+   graphics::segments(x0=seq_along(a), y0=0, y1=-log10(a), col="darkred")
+   graphics::segments(x0=seq_along(b), y0=0, y1=log10(b), col="darkblue")
+   graphics::abline(h=0, col="grey")
+   title(paste("Chr", chr, "FDR - Geuvadis (red) and LLS (blue)"))
+}
+dev.off()
+
+pdf(paste0(mydir.output, "/plot_manhattan_both_5.pdf"), width = 8, height = 12)
+par(mfrow = c(5, 1), mar = c(2, 3, 3, 1))
+for(chr in vchrs[21:22]) 
+{
+   mname <- paste(dname, "Chr", chr)
+   a <- table.go[table.go$chr == chr, "fdr"]
+   b <- table.lo[table.lo$chr == chr, "fdr"]
+   graphics::plot.new()
+   graphics::plot.window(xlim=c(0.5, length(a)+0.5), ylim=c(-1,1)*max(-log10(c(a, b))))
+   graphics::box()
+   graphics::axis(side=1)
+   graphics::axis(side=2)
+   graphics::segments(x0=seq_along(a), y0=0, y1=-log10(a), col="darkred")
+   graphics::segments(x0=seq_along(b), y0=0, y1=log10(b), col="darkblue")
+   graphics::abline(h=0, col="grey")
+   title(paste("Chr", chr, "FDR - Geuvadis (red) and LLS (blue)"))
+}
+dev.off()
+
+```
+
+Scatterplots of raw p-values, as well as  FDR-corrected p-values, per chromosome are produced below. Results are saved into pdf files.
+
+```{r plot.scatter.bothDatasets, fig.width=10, fig.height=5, results = 'hide'}
+# pvalues
+dname <- "GEUVADIS and LLS"
+pdf(paste0(mydir.output, "/plot_pvalues_GEUV_LLS_perChr.pdf"), width = 10, height = 5)
+par(mfrow = c(1, 2))
+for(chr in vchrs) 
+{
+   mname <- paste(dname, "Chr", chr)
+   a <- -log10(table.go[table.go$chr == chr, 1])
+   b <- -log10(table.lo[table.lo$chr == chr, 1])
+   mylims <- range(c(a, b))
+   dcols <- densCols(a, b)
+   plot(a, b, col = dcols, pch = 20, main = mname, xlab = "Geuvadis -log10 pvalue", ylab = "LLS -log10 pvalue")
+   segments(0, 0, mylims[2], mylims[2], lty = "dashed", col = "gray", lwd = 2)
+   segments(0, -log10(0.05), mylims[2], -log10(0.05), lty = "dashed", col = "gray", lwd = 2)
+   segments(-log10(0.05), 0, -log10(0.05), mylims[2], lty = "dashed", col = "gray", lwd = 2)
+}
+dev.off()
+
+# fdr
+pdf(paste0(mydir.output, "/plot_fdrs_GEUV_LLS_perChr.pdf"), width = 10, height = 5)
+for(chr in vchrs) 
+{
+   mname <- paste(dname, "Chr", chr)
+   a <- -log10(table.go[table.go$chr == chr, "fdr"])
+   b <- -log10(table.lo[table.lo$chr == chr, "fdr"])
+   mylims <- range(c(a, b))
+   dcols <- densCols(a, b)
+   plot(a, b, col = dcols, pch = 20, main = mname, xlab = "Geuvadis -log10 FDR", ylab = "LLS -log10 FDR")
+   segments(0, 0, mylims[2], mylims[2], lty = "dashed", col = "gray", lwd = 2)
+   segments(0, -log10(0.05), mylims[2], -log10(0.05), lty = "dashed", col = "gray", lwd = 2)
+   segments(-log10(0.05), 0, -log10(0.05), mylims[2], lty = "dashed", col = "gray", lwd = 2)
+}
+dev.off()
+```
+
+Scatterplots of the FDR-corrected p-values of both datasets are also produced, and saved into a pdf file.
+
+```{r plot.scatter.fdrs.pdf, results = 'hide'}
+# fdr
+pdf(paste0(mydir.output, "/plot_fdrs_bothDatasets.pdf"), width=8, height = 8)
+   a <- -log10(table.go[, "fdr"])
+   b <- -log10(table.lo[, "fdr"])
+   mylims <- range(c(a, b))
+   dcols <- densCols(a, b)
+   plot(a, b, col = dcols, pch = 20, main = "All overlapping genes", xlab = "Geuvadis -log10 FDR", ylab = "LLS -log10 FDR")
+   segments(0, 0, mylims[2], mylims[2], lty = "dashed", col = "gray", lwd = 2)
+   segments(0, -log10(0.05), mylims[2], -log10(0.05), lty = "dashed", col = "gray", lwd = 2)
+   segments(-log10(0.05), 0, -log10(0.05), mylims[2], lty = "dashed", col = "gray", lwd = 2)
+dev.off()
+```
+
+Below scatterplots of the raw  and FDR-corrected p-values of both datasets are produced, as well as of the p-values only. Both are saved as a pdf file.
+
+```{r plot.pvals.fdr, results = 'hide'}
+pdf(paste0(mydir.output, "/plot_pvals_fdr_Geuv_LLS.pdf"), width = 5, height = 10)
+par(mfrow = c(2, 1))
+dcols <- densCols(-log10(table.g$a), -log10(table.l$b))
+plot(-log10(table.g$a), -log10(table.l$b), pch = 20, col = dcols, cex = 0.7,
+     xlab = "Geuvadis", ylab = "LLS", main = "P-value per gene")
+   mylims <- range(c(-log10(table.g$a), -log10(table.l$b)))
+   segments(0, -log10(0.001), mylims[2], -log10(0.001), lty = "dashed", col = "gray", lwd = 2)
+   segments(-log10(0.001), 0, -log10(0.001), mylims[2], lty = "dashed", col = "gray", lwd = 2)
+   a <- -log10(table.go[, "fdr"])
+   b <- -log10(table.lo[, "fdr"])
+   mylims <- range(c(a, b))
+   dcols <- densCols(a, b)
+   plot(a, b, col = dcols, pch = 20, main = "FDR per gene", cex = 0.7, xlab = "Geuvadis", ylab = "LLS")
+   segments(0, 0, mylims[2], mylims[2], lty = "dashed", col = "gray", lwd = 2)
+   segments(0, -log10(0.05), mylims[2], -log10(0.05), lty = "dashed", col = "gray", lwd = 2)
+   segments(-log10(0.05), 0, -log10(0.05), mylims[2], lty = "dashed", col = "gray", lwd = 2)
+
+dev.off()
+
+pdf(paste0(mydir.output, "/plot_pvals_only_Geuv_LLS.pdf"), width = 6, height = 6)
+dcols <- densCols(-log10(table.g$a), -log10(table.l$b))
+plot(-log10(table.g$a), -log10(table.l$b), pch = 20, col = dcols, cex = 0.7,
+     xlab = "Geuvadis", ylab = "LLS", main = "SpliceQTL results per gene")
+   mylims <- range(c(-log10(table.g$a), -log10(table.l$b)))
+   segments(0, -log10(0.001), mylims[2], -log10(0.001), lty = "dashed", col = "gray", lwd = 2)
+   segments(-log10(0.001), 0, -log10(0.001), mylims[2], lty = "dashed", col = "gray", lwd = 2)
+dev.off()
+
+```
+
+
+### Make selection
+
+Now we select genes that are statistically significant in either dataset, or both.
+
+```{r def.selection}
+mcut <- 0.01
+table.go$sel <- table.go[, "fdr"] <= mcut
+table.lo$sel <- table.lo[, "fdr"] <= mcut
+table(table.go$sel, table.go$chr)
+table(table.lo$sel, table.lo$chr)
+#table.go.sel$sel <- table.go$fdr <= mcut
+#table.lo.sel$sel <- table.lo$fdr <= mcut
+for(xch in vchrs)
+{ 
+ print(paste("Chr", xch))
+   print(table(table.go[table.go$chr == xch, "sel"], table.lo[table.lo$chr == xch, "sel"]))
+}
+```
+
+```{r def.id.sel}
+# Here select ids to make plots in the server
+glist <- tbsel <- NULL
+mlo <- 10^(-2)
+mlo.l <- 10^(-2.5)
+mup <- 10^(-1)
+for(xch in 1:22)
+{ 
+   tbg <- table.go[(table.go$chr == xch), ]
+   colnames(tbg)[3] <- "fdr.g"
+   tbl <- table.lo[(table.lo$chr == xch), ]
+   colnames(tbl)[3] <- "fdr.l"
+   tbl$chr <- NULL
+   tb2 <- cbind(tbg, tbl)
+   tbsel1 <- tb2[(tb2$fdr.g <= mlo)&(tb2$fdr.l > mup), ]
+   g1 <- rownames(tb2[(tb2$fdr.g <= mlo)&(tb2$fdr.l > mup), ] )
+   tbsel1 <- rbind(tbsel1, tb2[(tb2$fdr.l <= mlo.l)&(tb2$fdr.g > mup), ])
+   g2 <- rownames(tb2[(tb2$fdr.l <= mlo.l)&(tb2$fdr.g > mup), ] )
+   tbsel1 <- rbind(tbsel1, tb2[(tb2$fdr.g <= mlo)&(tb2$fdr.l <= mlo), ])
+   g3 <- rownames(tb2[(tb2$fdr.g <= mlo)&(tb2$fdr.l <= mlo), ] )
+   vg <- c(rep("g", length(g1)), rep("l", length(g2)), rep("both", length(g3)))
+   glist <- rbind(glist, matrix(c(g1, g2, g3, vg), nrow = length(vg), ncol = 2))
+   tbsel1 <- cbind(tbsel1, vg)
+   tbsel <- rbind(tbsel, tbsel1)
+}
+save(tbsel, file = paste0(mydir.output, "/table_sel_geuv_lls.RData")) # tbsel
+```
+
+Table of selections per chr arm.
+
+```{r table.sel.chrarm}
+table(tbsel$chr, tbsel$vg)
+```
+
+
+
+## Technical information
+
+```{r}
+sessionInfo()
+```

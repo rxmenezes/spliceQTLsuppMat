@@ -1,0 +1,173 @@
+---
+title: "Results pairwise testing"
+author: "Renee Menezes"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+  toc_depth: 3  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Introduction
+
+Results of GEUVADIS and Leiden Longevity Study (LLS), for analyses involving pairwise testing, for each exon-SNP pair, per gene. Results are grouped per gene, to enable comparison with those of the spliceQTL test. Pairwise testing is performed per exon-SNP pair using a linear regression of the exon mRNA values on the SNP values (number of minor alleles).
+
+The idea is to compare results across studies, using the pairwise testing, and check if reproducibility is the same as with the spliceQTL test.
+
+
+```{r def.dirs}
+
+mydir.scripts <- "./scripts"
+mydir.output <-  "./output"
+mydir.data <- "./data"
+mydir.output.perGene <- mydir.output
+
+source(paste0(mydir.scripts, "/functions_wilcoxon_t_logistic_fdr.R"))
+source(paste0(mydir.scripts, "/get_ov.R"))
+
+
+```
+
+### Read results pairwise testing
+
+These results were produced using script `main_geuv_lls_lreg.R`, available in the `scripts` subfolder. We here read results per chromosome and check how many tests agree.
+
+
+
+```{r read.res.pairs}
+th <- c(0.001, 0.005, 0.01)
+for(chr in 1:22) # for(chr in 1:22)
+{ 
+#        cat("Analysing", chr, ":", as.character(Sys.time()), "\n")
+        load(paste0(mydir.data, "/lregResults_Geuvadis_chr", chr, ".RData"))
+        res.g <- myres
+        load(paste0(mydir.data, "/lregResults_LLS_chr", chr, ".RData"))
+        res.l <- myres
+        if(length(res.g) >= length(res.l)) {
+            ov <- names(res.g) %in% names(res.l)
+            res.g <- res.g[ ov ]
+            res.l <- res.l[ names(res.g) ]
+            } else {
+            ov <- names(res.l) %in% names(res.g)
+            res.l <- res.l[ ov ]
+            res.g <- res.g[ names(res.l) ]
+        }
+     pairs.cor <- sapply(names(res.g), getov.cor, res1 = res.g, res2 = res.l)
+#     pairs.th <- sapply(names(res.g), getov.th, res1 = res.g, res2 = res.l, th = th)
+     all.res <- sapply(names(res.g), getov2, res1 = res.g, res2 = res.l, th = th)
+     mat.rownames <- data.frame(th = rep(th, 2), gid = rep(c("Geuv", "LLS"), each = length(th)))
+     save(pairs.cor, all.res, mat.rownames, 
+          file = paste0(mydir.output, "/summary1_chr", chr, ".RData"))
+}
+
+
+```
+
+
+### Explore results
+
+We now count the number of genes with at least one pair selected, per dataset and threshold. To do so, we create a vector per dataset and threshold, with one entry per gene and a logical value indicating at least one selection. Then we tabulate the vector of the two datasets, per threshold. We also make a scatterplot of the number of selections made.
+
+
+```{r def.obj.sel}
+th <- c(0.001, 0.005, 0.01)
+
+chr <- 1
+    
+load(paste0(mydir.output, "/summary1_chr", chr, ".RData"))   # pairs.cor, all.res, mat.rownames
+vcors <- pairs.cor
+mat.rownames <- data.frame(th = rep(th, 2), gid = rep(c("Geuv", "LLS"), each = length(th)))
+mat.allrows <- mat.rownames
+vchr <- rep(chr, ncol(all.res))
+mat.vsel <- all.res
+
+for(chr in 2:22)
+{
+  load(paste0(mydir.output, "/summary1_chr", chr, ".RData"))   # pairs.cor, all.res, mat.rownames
+  vcors <- c(vcors, pairs.cor)
+  vchr <- c(vchr, rep(chr, ncol(all.res)))
+  mat.vsel <- cbind(mat.vsel, all.res) 
+}
+
+```
+
+Per threshold, the cross-tabulation of genes with at least one exon-snp pair selected is:
+
+```{r table.atleast1sel}
+for(xth in th)
+{ 
+   myt <- table(mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "Geuv"), ] == 0,
+                mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "LLS"), ] == 0)
+   print(myt)
+#   print(chisq.test(myt))
+#   print(mcnemar.test(myt))
+   myt <- 100*myt/sum(myt)
+   print(chisq.test(myt))
+   print(mcnemar.test(myt))
+
+}
+
+```
+
+The scatterplots of the proportion selected, for each threshold, are displayed below. This is supplementary figure 9, with panels arranged horizontally rather than vertically.
+
+```{r plot.propsel.geuvAndLLS.perthr, fig.width=12, fig.height=4}
+par(mfrow = c(1, 3), mar = c(4, 4, 4, 1))
+xth <- th[1]
+dcols <- densCols(mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "Geuv"), ] ,
+                  mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "LLS"), ])
+plot(mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "Geuv"), ] ,
+     mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "LLS"), ], pch = 20, col = dcols,
+     xlab = "Geuvadis", ylab = "LLS", main =paste("Prop. selected with p<=", xth))
+
+xth <- th[2]
+dcols <- densCols(mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "Geuv"), ] ,
+                  mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "LLS"), ])
+plot(mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "Geuv"), ] ,
+     mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "LLS"), ], pch = 20, col = dcols,
+     xlab = "Geuvadis", ylab = "LLS", main =paste("Prop. selected with p<=", xth))
+
+xth <- th[3]
+dcols <- densCols(mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "Geuv"), ] ,
+                  mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "LLS"), ])
+plot(mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "Geuv"), ] ,
+     mat.vsel[(mat.allrows$th == xth)&(mat.allrows$gid == "LLS"), ], pch = 20, col = dcols,
+     xlab = "Geuvadis", ylab = "LLS", main =paste("Prop. selected with p<=", xth))
+
+```
+
+
+Of course, the above are threshold-dependent. We also computed correlations between 
+`-log(p)` values for each gene, whenever the same exon-SNP pairs were available for both
+datasets. This is supplementary figure 8.
+
+```{r plot.dens.cor, fig.width=8, fig.height=6}
+vcors <- unlist(vcors)
+plot(density(vcors[!is.na(vcors)], from = -1, to = 1), 
+     lty = "solid", lwd = 2, col = "purple", xlab = "density", 
+     ylab = "correlation", main = "Pearson correlation between prop. selected per gene, between datasets")
+for(xl in c(-0.2, 0.2))
+  segments(xl, 0, xl, 10, lty = "dotted", col = "gray", lwd = 2)
+segments(0.43, 0, 0.43, 10, lty = "dashed", col = "black")
+```
+
+
+The summary of the correlations is:
+
+```{r sum.cors}
+summary(vcors[!is.na(vcors)])
+sum(vcors[!is.na(vcors)] < 0)/sum(!is.na(vcors))
+sum(vcors[!is.na(vcors)] > 0.4308 )/sum(!is.na(vcors))
+sum(abs(vcors[!is.na(vcors)]) <= 0.2)/sum(!is.na(vcors))
+sum(vcors[!is.na(vcors)] <= -0.2 )/sum(!is.na(vcors))
+
+```
+
+
