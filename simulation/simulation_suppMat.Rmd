@@ -1,0 +1,999 @@
+---
+title: "SpliceQTL simulation study"
+author: "Renee Menezes"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+  toc_depth: 3  
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=F, message=F)
+```
+
+
+### Motivation
+
+Here we evaluate the test computed for different situations: the one based upon the normal distribution, the one based upon the multinomial distribution where the correlation structure between covariates in the explanatory variables set is ignored, and finally the one using the multinomial and the correlation structure between covariates, represented by W. 
+
+Here we do not make raw datasets available. However, we make the subset of the SNP dataset (comprising of the number of minor alleles per SNP, so taking one of the values 0, 1 or 2) for a selection of SNPs mapping to 3 randomly selected genes. 
+
+# Definitions
+
+### Read in data and partitions 
+
+
+```{r def.load.functions}
+source("./scripts/functions_wilcoxon_t_logistic_fdr.R")
+source("./scripts/f_spliceQTLfit.R") # Functions get.probs and get.probs.part are in this script
+# For making ROC curves
+source("./scripts/roc_functions_graphs.R")
+source("./scripts/f_spliceQTLfit_simulations.R")
+library(snow)
+library(snowfall)
+ncpus <- 3
+```
+
+A total of 2 genes were selected, with different numbers of SNPs in their sets. We will take the minimum number of SNPs in these 2 sets, and select that number for all genes. This essentially allows us to generate the same effects of SNPs on the probabilities for each exon to be observed, making the results across genes more comparable. We had in fact considered a third gene together with these, but results were very similar to those of gene 2 so, for the sake of simplicity, we present results for only 2 genes.
+
+In a separate script, the GEUVADIS SNP and exon-level count data for chromosome 1 was read in and analysed. From the list of genes found to be significant, we selected 2 genes at random. These 2 genes have different numbers of SNPs mapping to them. We choose to select the same number of SNPs for the examples, so we use the minimum number found for these genes. 
+
+
+The genes selected, with results as well as their number of exons, number of SNPs in the set and corresponding p-value from the analysis, are:
+
+```{r def.load.objects.SNPdata.And.Partitions}
+load("./data/spliceQTL_fit_results.RData") 
+# res.all, a matrix with 3 columns and one row per gene
+load("./data/genes_selectedForSimulation.RData") # sel.genes
+sel.res <- res.all[sel.genes, ][1:2, ]
+sel.res
+```
+
+We then select SNPs mapping to these genes and gather those in datasets, one per gene. Note that we select a number of SNPs equal to the smallest  number of SNPs mapping to the genes selected, so as to have an equal size across genes used. From now on, this will be referred to in this document as the SNP data.
+
+We have created partitions of the SNP data to enable evaluating the reproducibility and replicability in a larger number of combinations of samples. Essentially we partition the 373 samples into 5 subsets of roughly 70 samples, and repeat this operation 20 times. This yields 100 subsets of samples which will be used in the simulations. Note that, for each subset, we leave out SNPs that have all observations equal to the same value for all samples in the subset. To keep the number of SNPs the same across sets, these SNPs are eliminated from the remaining sets as well. We used the script `make_partition_20_equalSetSizes.R`to create partitions and eliminate SNPs with constant values. Here we make results available, and the script can be used to create other partitions, given another SNP dataset per gene used.
+
+Below we load objects with the data and corresponding annotation, as well as with the partitions created.
+
+```{r}
+load("./data/snp_data_forSimulation_3genes_equalSetSizes.RData") # snp.data.l
+load("./data/snp_ann_forSimulation_3genes_equalSetSizes.RData") # snp.ann.l
+snp.data.l <- list(snp.data.l[[1]], snp.data.l[[2]])
+snp.ann.l <- list(snp.ann.l[[1]], snp.ann.l[[2]])
+npart <- 5
+nshuffles <- 20 # the number of times the data set is subdivided - so the total number of subsets is npart*nshuffles
+load("./data/partition_SNPdata_forSimulation.RData") # part.mat - here we load a matrix, rather than a vector
+
+```
+
+The `part.mat` matrix has as many rows as samples (373), and as many columns as shuffles. 
+Per column, entries take integer values between 1 to `npart`, indicating which partition samples are allocated to, for the shuffling corresponding to that column.
+
+
+### Scenarios used
+
+Here we consider three simulation scenarios, representing possible patterns of associations between SNPs and exons:
+
+- Scenario 1 (S1): only a small proportion (0.02) of SNPs affects exons, with large effect sizes;
+
+- Scenario 2 (S2): only a small proportion (0.02) of SNPs affects exons, with small effect sizes;
+
+- Scenario 3 (S3): a large proportion (0.20) of SNPs affects exons, with small effect sizes.
+
+We assume that each of the simulation scenarios could correspond to a gene with either 3 or 50 exons. In cases assuming 3 exons, the second exon is affected by the SNP genotypes. In cases assuming 50 exons, a randomly selected subset of 17 exons is chosen to be associated with the SNPs, making up for a third of the exon probabilities being affected. 
+
+In each scenario, a proportion of SNPs with effect on the expected probabilities per exon can either be 0.02 (for S1 and S2) or 0.20 (S3), and the specific SNPs displaying the effect are selected at random. 
+
+
+
+## Simulations 
+
+### Simulate effects
+
+Here we define the gene-specific matrix `B`, of columns beta_k, one per exon.
+This matrix has as many rows as SNPs considered in the test, per gene.
+The three scenarios correspond to:
+
+S1. only a few rows of `B` have a large effect, all others have zero -->
+So: a few SNPs affected given by `snp.eff[[1]]`, for `exons.aff`, and `eff.size[1]` 
+
+S2. only a few rows of `B` have a subtle effect, all others have zero -->
+So: a few SNPs affected given by `snp.eff[[2]]`, for `exons.aff`, and `eff.size[2]`
+
+S3. half of the rows of `B` have a subtle effect, all others have zero -->
+So: lots of SNPs affected given by `snp.eff[[3]]`, for `exons.aff`, and `eff.size[3]` 
+
+Note that `B` is the same for all partitions or the entire data 
+Since all gene sets are equal, we also generate a single `B` for all  genes. 
+
+Define two values for the number of exons: 3 or 50. First simulate effects assuming 50 exons.
+
+```{r def.effects.Bl.COMP}
+
+nexons <- 50                            
+exons.aff <- sort(sample(nexons, ceiling(nexons/10))) ## a tenth of the exons is affected by the SNPs
+#save(exons.aff, file=paste(mydir.output,"/exons_add_forSimulation_equalSetSizes", myname2, ".RData",sep="")) # exons.aff
+```
+
+Define proportions of SNPs with an effect, and the mean effect size (beta values).
+
+```{r}
+prop.aff <- c(0.02, 0.02, 0.20) # proportion of SNPs with an effect for the 3 situations
+eff.size <- c(5, 1, 1) # effect size, or beta values to be considered, for the 3 situations
+```
+
+Now put together the matrix with effects `B`, here denoted by object `Bl` to refer to the larger number of exons (50).
+
+```{r}
+new.nrow <- min(unlist( lapply(snp.data.l, nrow) ))
+nsnps <- new.nrow
+Bl <-  array(0, dim=c(new.nrow, nexons, length(prop.aff) ))
+# Bl uses the larger number of exons, for 3 situations - each for a separate effect
+snp.eff <- list( sample(1:nsnps, ceiling(prop.aff[1]*nsnps)), 
+                 sample(1:nsnps, ceiling(prop.aff[2]*nsnps)), 
+                 sample(1:nsnps, ceiling(prop.aff[3]*nsnps)) ) 
+snp.eff[[ 2 ]] <- snp.eff[[ 1 ]]
+save(snp.eff, file=paste("./output/snp_effects_forSimulation.RData", sep="")) # snp.eff
+for(xj in 1:length(prop.aff))
+  {
+  for(xk in exons.aff)
+  { 
+    myeff <- sample( ( -eff.size[xj]  ):(eff.size[xj]) , length(snp.eff[[xj]]), replace =TRUE  )
+    Bl[ snp.eff[[xj]] , xk , xj ] <- 2*myeff     
+  }
+}
+
+save(Bl, file="./data/Bmatrix_largeNumberExons.RData") # Bl
+```
+
+We can repeat the same steps assuming 3 exons. This is not run now, but below I include the chunks where variables are defined for it and the effect matrices are generated.
+
+```{r def.effects.smallNExons.Bs.COMP, eval = FALSE}
+nexons <-  3
+exons.aff <-  2
+#save(exons.aff, file=paste(mydir.output,"/exons_add_smallNEx_forSimulation",myname, "_", myname2,".RData",sep="")) # exons.aff
+```
+
+Define proportions of SNPs with an effect, and the mean effect size (beta values).
+
+```{r eval = FALSE}
+prop.aff <- c(0.02, 0.02, 0.20) # proportion of SNPs with an effect for the 3 situations
+eff.size <- c(5, 1, 1) # effect size, or beta values to be considered, for the 3 situations
+```
+
+Now put together the matrix with effects `B`, here denoted by object `Bs` to refer to the smaller number of exons (3).
+
+```{r eval = FALSE}
+new.nrow <- min(unlist( lapply(snp.data.l, nrow) ))
+nsnps <- new.nrow
+Bs <-  array(0, dim=c(new.nrow, nexons, length(prop.aff) ))
+# Bs uses the smaller number of exons, for 3 situations - each for a separate effect
+snp.eff <- list( sample(1:nsnps, ceiling(prop.aff[1]*nsnps)), 
+                 sample(1:nsnps, ceiling(prop.aff[2]*nsnps)), 
+                 sample(1:nsnps, ceiling(prop.aff[3]*nsnps)) ) 
+snp.eff[[ 2 ]] <- snp.eff[[ 1 ]]
+save(snp.eff, file=paste(mydir.output,"/snp_effects_smallNEx_forSimulation",myname, "_", myname2, ".RData",sep="")) # snp.eff
+for(xj in 1:length(prop.aff))
+  {
+  for(xk in exons.aff)
+  { 
+    myeff <- sample( ( -eff.size[xj]  ):( eff.size[xj] ) , length(snp.eff[[xj]]), replace = TRUE  )
+#    myeff <- myeff/sum(myeff)
+    Bs[ snp.eff[[xj]], xk, xj ] <- 2*myeff     
+  }
+}
+
+save(Bs, file="./data/Bmatrix_smallNumberExons.RData") # Bs
+```
+
+The total number of effect matrices is determined by the cross-combinations of: the numbers of exons (two possibilities, namely 3 and 50) and the effect size combined with the proportion of SNPs displaying effect (three scenarios), totalling 6 matrices of SNP effects on exons. Once the matrices of effect sizes of SNPs on exons are generated, they are used for all data partitions of the samples.
+
+
+### Examine correlations between SNPs
+
+```{r def.snp.cors}
+cor.snps.l <- lapply(snp.data.l, cor.utri, method="spearman")
+```
+
+SNPs display similar correlation structure, in terms of their distribution. To illustrate this, we computed the Spearman correlation matrix between SNPs of all 3 genes. A density plot of the correlations between different SNPs shows that they are similar, with correlations between SNPs within gene 1's set a little more spread away from zero than for the other genes. Indeed,  `r round(sum(abs(cor.snps.l[[1]])>0.3)/length(cor.snps.l[[1]]), 2)` of all pairwise correlations between SNPs in the set for gene 1 are larger (in absolute value) than 0.3, whilst this fraction is 
+`r round(sum(abs(cor.snps.l[[2]])>0.3)/length(cor.snps.l[[2]]), 2)`  for gene 2. This is supplementary figure 2.
+
+```{r plot.dens.snp.cors, fig.width=8, fig.height=8}
+myxlim <- range(unlist(lapply(cor.snps.l, range)))
+mycols <- c("red","blue")[1:length(cor.snps.l)]
+xi <- 1
+plot(density(cor.snps.l[[xi]]), col=mycols[xi], main="Spearman correlations between SNPs per set",
+     xlim = myxlim, xlab="Spearman correlation", ylab="density", ylim=c(0, 6))
+for(xi in 2:length(cor.snps.l)) lines(density(cor.snps.l[[xi]]), col=mycols[xi])
+legend("topleft", legend=paste("Gene", 1:length(cor.snps.l)), lty="solid", col=mycols)
+```
+
+We see that the density plot for gene 1 rougher than for the others. Bandwidths chosen by default are: 0.0065 for gene 1 and 0.002955 for gene 2.
+Of course, using the smaller bandwidth value (around 0.003) for both genes will mean that
+the density for gene 1 is even rougher. Not clear why the correlations for gene 1 are so different. There is no overlap between the SNPs in these sets.
+This leads us to conclude that gene 1 yields a larger proportion of correlations away from zero.
+
+### Examine effects
+
+
+
+Range of effects for each scenario.
+
+```{r def.colEffects}
+col.eff <- c("orange","orangered","deepskyblue","blue","mediumpurple2","purple3" )
+ecols <- col.eff[c(2, 4, 6)]
+```
+
+```{r plot.effSizes.range, fig.width=6, fig.height=6}
+myr <- vector("list", length(eff.size))
+for(xi in 1:length(snp.data.l)) myr[[xi]] <- range(Bl[, colSums(abs(Bl[, , xi]))>0, xi][, 1])
+
+myxlim <- c( min(unlist(lapply(myr, min))), max(unlist(lapply(myr, max))) )
+plot(0, 0, xlim=myxlim, ylim=c(0,4), col="white", ylab="Scenario",
+     xlab="range of effect sizes", yaxt="none")
+axis(2, at=1:length(snp.data.l), labels=1:length(snp.data.l))
+for(xi in 1:length(snp.data.l))
+   segments(myr[[xi]][1], xi, myr[[xi]][2], xi, lty="solid", 
+            col=ecols[xi], lwd=2)
+
+```
+
+Plots of effect sizes, per scenario. Here we can see that, in S1, effects are generated in a wider range, and there is a larger fraction of effects. For S2, the effect size range is narrower than that for S1, and this range becomes the narrowest for S3.
+
+```{r plot.effect.sizes.largeNumberExons, fig.width=12, fig.height=4}
+# The plot below only shows if effects are different from zero
+par(mfrow=c(1, length(snp.data.l)))
+for(xi in 1:length(snp.data.l))
+{
+  myb <- Bl[, , xi]
+  mprop <- sum(myb != 0)/length(myb)
+  myb <- myb[ myb != 0]
+  plot(density(myb)$x, density(myb)$y*sum(myb != 0), col=ecols[xi], type="l", lwd=2, 
+       xlab = "generated non-zero effect sizes", ylab="density", main=paste("Effect", xi))
+  text(x=0, y=min(density(myb)$y)+0.1*diff(range(density(myb)$y)), 
+       labels=paste(round(1-mprop, 3), "of effects 0"), cex=.8, pos=3)
+}
+```
+
+The narrowing of the range of effect sizes can be better illustrated in the following plot.
+
+```{r plot.effect.sizes.largeNumberExons.1plot, fig.width=6, fig.height=6}
+par(mfrow=c(1, 1))
+xi <- 1
+myb <- Bl[, , xi]
+myb <- myb[ myb != 0]
+plot(density(myb), col=ecols[xi], type="l", lwd=2, 
+      xlab = "generated non-zero effect sizes", ylab="density", 
+      main="", xlim = myxlim, 
+      #main=paste("Different situations"), 
+      ylim=c(0, 1))
+for(xi in 2:length(snp.data.l))
+{
+  myb <- Bl[, , xi]
+  myb <- myb[ myb != 0]
+  lines(density(myb)$x, density(myb)$y, col=ecols[xi], type="l", lwd=2)
+}
+legend("topleft", legend=paste("Scenario", 1:length(snp.data.l)), lty="solid", lwd=2, col=ecols)
+```
+
+
+The same can be repeated using 3 exons. Below is the chunk to load the simulated matrix of effects, to be run separately.
+
+```{r def.load.objects.effects.3exons, eval=F}
+# This can only be run when Bs is  created
+myname <- "N10000_linkF_equalSetSizes"
+#source("load_objects_forSimulation_20_2_equalSetSizes.R")
+# In script assign_effects.R: snp_eff are created and saved
+# Here for 50 exons
+nexons <- 3
+prop.aff <- c(0.02, 0.02, 0.20) # proportion of SNPs with an effect for the 3 situations
+eff.size <- c(5, 1, 1) # effect size, or beta values to be considered, for the 3 situations
+
+exons.aff <- 2
+
+load("./data/Bmatrix_smallNumberExons.RData") # Bs
+```
+
+
+### Simulating data and testing
+
+We generate 100 subsets of the 373 samples, as follows: we partition the data into 5 subsets of between 74 and 77 samples each. Subsequently, we repeat this partitioning 20 times. This generates subsets with size typical of many studies.
+
+Sets of response variables representing exon expression levels are then generated, separately for each of the 6 cases considered where SNPs affect the exon expression levels. We assume that SNP genotype variation affects exon expression for 50% of the samples. In addition, we generate sets of response variables with no SNP effect.
+
+
+Here we generate the responses, and compute the test statistics p-values using both all samples
+ as well as using all subsets.
+
+```{r def.responses.generationeqSetSizes.SF.COMP, eval = FALSE}
+
+# Yl responses with effect, Ynl responses with no effect
+Yl <- Ynl <- vector("list", length(snp.data.l)) # responses - with large n.exons, and no effect for both numbers of exons
+pvals.part <- pvals.part.0 <- NULL
+nperm <- 10^4
+total.gexp <- 10^4 # total gene expression per sample, so sum of obs for all exons
+nsamples <- ncol(snp.data.l[[1]]) # the number of samples is the same for all genes
+v.aff.samples <- sample(1:nsamples, ceiling(nsamples/2)) # vector of samples with effect 
+v.unaff.samples <- (1:nsamples)[!((1:nsamples) %in% v.aff.samples)]
+
+for(xi in 1:length(snp.data.l)) 
+{
+  Yl[[xi]] <- Ynl[[xi]] <- array(0, dim = c(nexons, ncol(snp.data.l[[xi]]), 3))
+  for(xj in 1:length(prop.aff)) # changing effect type/situation
+  {
+    # Generate responses, large number of exons
+    Yl[[xi]][, , xj] <- gen.response(snp.data.l[[xi]], Bl[, , xj], v.aff.samples, total.gexp)
+    # Now make the responses with no effect
+    Ynl[[xi]][, , xj] <- my.rmultinom( prob = rep(0.5, nexons), size = total.gexp, n = nsamples )
+    snp.data <- snp.data.l[[xi]]
+    yl <- Yl[[xi]][, , xj]
+    ynl <- Ynl[[xi]][, , xj]
+    for(xl in 1:ncol(part.mat))
+    {  
+      partition <- part.mat[, xl]
+      sfInit(parallel=TRUE, cpus = ncpus)
+      res.l.n <-  sfSapply(1:npart, test.spQTL.perPart, partition, snp.data = snp.data, yl = yl,
+                              gexp.stand = T, nperm = nperm, multin = FALSE)
+      res.l.n.0 <- sfSapply(1:npart, test.spQTL.perPart, partition, snp.data = snp.data, yl = ynl,
+                               gexp.stand = T, nperm = nperm, multin = FALSE)
+      res.l.m <-  sfSapply(1:npart, test.spQTL.perPart, partition, snp.data = snp.data, yl = yl,
+                               gexp.stand = T, nperm = nperm, multin = TRUE)
+      res.l.m.0 <- sfSapply(1:npart, test.spQTL.perPart, partition, snp.data = snp.data, yl = ynl,
+                               gexp.stand = T, nperm = nperm, multin = TRUE)
+      sfStop()
+      mat.pars <- matrix(c(rep(c(xi, xj, xl), each=npart), 1:npart), nrow=npart, ncol=4) 
+      pvals.part   <- rbind(pvals.part,   cbind(mat.pars, res.l.n,   res.l.m))
+      pvals.part.0 <- rbind(pvals.part.0, cbind(mat.pars, res.l.n.0, res.l.m.0))
+    }
+  }
+}
+
+
+save(Yl, file = "./output/response_largeNexons_variousEffectTypes.RData") # Yl
+save(Ynl, file = "./output/response_largeNexons_noEffect_forSimulation.RData") # Ynl
+save(v.aff.samples, file = "./output/vaffSamples_largeNexons_forSimulation.RData") # v.aff.samples, vector of samples with effect 
+save(pvals.part, pvals.part.0, file = "./output/pvalues_effectAndNull_normAndMultin.I.RData")
+
+## pvals.part matrix with p-values per partition
+## First 4 columns have: gene (original snp data matrix) used; scenario (1:3); partition; split
+## Then the p-values for normal and multinomial, in this order
+## pvals.part.0 involves the same 4 columns, but using the data with no effect 
+
+```
+
+```{r eval = TRUE, echo = FALSE}
+load("./output/pvalues_effectAndNull_normAndMultin.I.RData") # pvals.part, pvals.part.0
+```
+
+
+
+### Test using the normal and multinomial
+
+Here we use test statistics that ignore the correlation structure between covariates. This part is of relatively less interest, but can be used as a check that functions work as expected.
+
+P-values are then computed for the entire data, as well for partitions. We consider the normal and the multinomial (ignoring the correlation structure between the SNPs) distributions, both for the cases involving 50% of samples with effect of SNPs on exon expression levels, as well as cases without effect. 
+
+```{r def.reshape.pvals.mats.save}
+
+pvals.part.mat <- pvals.part
+colnames(pvals.part.mat) <- c("Gene index", "Effect type", "partColum", "subpartition", paste(rep("p", 2), c("norm", "multin"), rep("l", 2)))
+
+# pvalues obtained using subsets (based on partitions) of the samples, no effect 
+pvals.part.0.mat <- pvals.part.0
+colnames(pvals.part.0.mat) <- colnames(pvals.part.mat)
+
+```
+
+
+```{r def.joining.effects}
+
+pvals.part.joint <- rbind(pvals.part.mat, pvals.part.0.mat)
+sign.ind <- c(rep(1, nrow(pvals.part.mat)), rep(0, nrow(pvals.part.0.mat)))
+
+pvals.part.joint <- data.frame(sign.ind, pvals.part.joint)
+
+pvals.mat.i <- pvals.part.joint
+
+```
+
+
+P-values for the tests based upon the normal distribution as well as those based upon the multinomial distribution, where the latter ignores any correlation structure between the covariates in the set, are displayed below. Scatterplots of these p-values are displayed at the end of the document. 
+
+```{r boxplot.pvals.noW, fig.width=10, fig.height=5}
+mycols <- c("red","purple","blue")
+mytitle <- c("norm", "multin, W=I")
+par(mfrow=c(1, 2), mar=c(5, 3, 4, 1))
+for(xj in 1:2)
+{  
+   boxplot(pvals.part.mat[, 4+xj] ~ pvals.part.mat[, 1], col=mycols, xlab="Gene",
+           title=paste(mytitle[xj]))
+   text(1.5, 0.9, paste(colnames(pvals.part.mat)[4+xj]))
+}
+for(xj in 1:2)
+{  
+  boxplot(-log(pvals.part.mat[, 4+xj]) ~ pvals.part.mat[, 1], col=mycols,
+          xlab="Gene", title=paste(mytitle[xj]))
+  text(1.5, 0.9, paste(colnames(pvals.part.mat)[4+xj]))
+}
+
+
+```
+
+From the boxplots we essentially see that the two tests yield very similar p-value distributions. We also check effects picked up in the partitions.
+
+
+ROC curves were also produced for the normal and multinomial (W=I) p-values. Here we note that the curves are virtually the same for each case considered.
+
+```{r plot.roc, fig.width=10, fig.height=5}
+npvals <- 2
+
+par(mfrow=c(1, length(snp.data.l)),mar=c(5, 4, 1, 1))
+for(gene in 1:length(snp.data.l)) #nlevels(factor(pvals.part.joint$Gene.index)) )
+{ 
+  pvals.part.g <- pvals.part.joint[pvals.part.joint$Gene.index == gene,]
+  roc.l <- vector("list", nlevels(factor(pvals.part.joint$Effect.type))*npvals)
+  xi <- 1
+  for(eff in 1:nlevels(factor(pvals.part.joint$Effect.type)) )
+  {
+    pvals.sub.mat <- pvals.part.g[pvals.part.g$Effect.type==eff,]
+    pvals.sub.only <- pvals.sub.mat[,6:7]
+    # get roc curve
+    for(xj in 1:ncol(pvals.sub.only))
+    {
+      roc.l[[xi]] <- roc.comp(pvals.sub.only[,xj],pvals.sub.mat[,1],alpha=seq(0,1,by=0.01))
+      xi <- xi+1
+    }
+  }
+  col.eff <- rainbow(nlevels(factor(pvals.part.joint$Effect.type))*ncol(pvals.sub.only),start=0.1,end=0.9)
+  names(roc.l) <- paste( rep( 1:3,each=ncol(pvals.sub.only) ) , rep( colnames(pvals.sub.only),nlevels(factor(pvals.part.joint$Effect.type)) ) )
+  roc.graph(roc.l,mycols=col.eff,main.title="" , pdf=F)
+  text(x=0.3, y=0.2, labels=paste("Gene", gene))
+}
+```
+
+These ROC curves compare the normal and the multinomial tests. We can see that, in this case, they yield similar curves, for a given gene and scenario. This figure was not included in the manuscript.
+
+### Multinomial test with W representing SNP correlation structure
+
+
+Now use `W` computed from the data. 
+
+```{r def.test.responses.generation.eqSetSizes.w.SF.COMP, eval = FALSE}
+pvals.part <- pvals.part.0 <- NULL
+nperm <- 10^4
+nsamples <- ncol(snp.data.l[[1]]) # the number of samples is the same for all genes
+
+for(xi in 1:length(snp.data.l)) # changing the gene
+{
+  snp.data <- snp.data.l[[xi]]
+  myW <- tcrossprod(snp.data) #equivalent to cov(SNPs)
+  for(xj in 1:length(prop.aff)) # changing effect type
+  {
+    yl <- Yl[[xi]][, , xj]
+    ynl <- Ynl[[xi]][, , xj]
+    # run per partition
+    for(xl in 1:ncol(part.mat))
+    {  
+      partition <- part.mat[, xl]
+      sfInit(parallel=TRUE, cpus = ncpus)
+      res.l.m <-  sfSapply(1:npart, test.spQTL.perPart, partition, 
+                           snp.data = snp.data, yl = yl, gexp.stand = T, 
+                           nperm = nperm, multin = TRUE, use.w = TRUE)
+      res.l.m.0 <- sfSapply(1:npart, test.spQTL.perPart, partition, 
+                            snp.data = snp.data, yl = ynl, gexp.stand = T, 
+                            nperm = nperm, multin = TRUE, use.w = TRUE)
+      sfStop()
+      mat.pars <- matrix(c(rep(c(xi, xj, xl), each=npart), 1:npart), nrow=npart, ncol=4) 
+      pvals.part   <- rbind(pvals.part,   cbind(mat.pars, res.l.m))
+      pvals.part.0 <- rbind(pvals.part.0, cbind(mat.pars, res.l.m.0))
+    }
+  }
+}
+
+# pvals.part matrix with p-values per partition
+# First 4 columns have: gene (original snp data matrix) used; scenario (1:3); partition; split
+# Then the p-values for normal and multinomial, in this order
+# pvals.part.0 involves the same 4 columns, but using the data with no effect 
+
+#save(pvals.part, pvals.part.0, file = "./output/pvalues_effectAndNull_Multin.W.RData")
+```
+
+```{r eval = TRUE, echo = FALSE}
+load("./output/pvalues_effectAndNull_Multin.W.RData") # pvals.part, pvals.part.0
+
+```
+
+```{r def.reshape.pvals.mats.save.w.COMP}
+
+pvals.part.mat <- pvals.part
+colnames(pvals.part.mat) <- c("Gene index","Effect type","partColum", "subpartition" ,"p multin w")
+
+pvals.part.0.mat <-pvals.part.0
+colnames(pvals.part.0.mat) <- colnames(pvals.part.mat)
+
+
+```
+
+
+```{r def.joining.effects.w.COMP}
+pvals.part.joint <- rbind(pvals.part.mat, pvals.part.0.mat)
+sign.ind <- c(rep(1, nrow(pvals.part.mat)), rep(0, nrow(pvals.part.0.mat)))
+
+pvals.part.joint <- data.frame(sign.ind, pvals.part.joint)
+
+pvals.mat.w <- pvals.part.joint
+
+```
+
+Here boxplots are produced of the p-values across all partitions. This helps us to check if effects are picked up by each gene. 
+
+
+```{r boxplot.pvals.w, fig.width=10, fig.height=5, eval=F}
+#
+#
+mycols <- c("red","purple","blue")
+#pdf(paste(mydir.output,"/boxplots_pvals_partitions",myname1,".pdf",sep=""),width=10,height=6)
+par(mfrow=c(1,2),mar=c(5,4,1,1))
+   boxplot(pvals.part.mat[,5] ~ pvals.part.mat[,1],col=mycols,xlab="Gene", ylab="p-value")
+   text(1.5,0.9,paste(colnames(pvals.part.mat)[5]))
+  boxplot(-log(pvals.part.mat[,5]) ~ pvals.part.mat[,1],col=mycols,xlab="Gene", ylab="-log p-value")
+  text(1.5,0.9,paste(colnames(pvals.part.mat)[5]))
+#dev.off()
+
+```
+
+We can conclude that the effects simulated are more likely to be picked up for gene 1 than for gene 2.
+
+ROC curves for the multinomial test using `W` computed from the SNP correlation structure suggest that the test has varied power to detect effects. For gene 1, which involves SNP with a more prominent correlation structure, the ROC curves in all three situations are very similar and display AUC very close to 1, with that for situation 1 being the lowest. For gene 2 the AUCs are lower, possibly because the correlations between SNPs are then lower (see right-hand side graph below).
+
+
+```{r plot.roc.w.only, fig.width=10, fig.height=5}
+####
+# USE pvals.mat.w
+###
+# These results are for the multinomial with W already
+# The different roc curves per gene are for diffferent effects
+###
+npvals <- 1 # the number of pvalues in the pvals.part.joint object
+# This could involve multiple columns with p-values, one corresponding to each test,
+# but here it only involves a single one
+
+par(mfrow=c(1, length(snp.data.l)), mar=c(5, 3, 1, 1))
+for(gene in 1:length(snp.data.l)) #nlevels(factor(pvals.part.joint$Gene.index)) )
+{ 
+  pvals.part.g <- pvals.part.joint[pvals.part.joint$Gene.index == gene, ]
+  roc.l <- vector("list", nlevels(factor(pvals.part.joint$Effect.type))*npvals)
+  xi <- 1
+  for(eff in 1:nlevels(factor(pvals.part.joint$Effect.type)) )
+  {
+    pvals.sub.mat <- pvals.part.g[pvals.part.g$Effect.type==eff, ]
+    pvals.sub.only <- pvals.sub.mat[, 6, drop=FALSE]
+    # get roc curve
+    for(xj in 1:ncol(pvals.sub.only))
+    {
+      roc.l[[xi]] <- roc.comp(pvals.sub.only[,xj], pvals.sub.mat[, 1], alpha=seq(0, 1, by=0.01))
+      xi <- xi+1
+    }
+  }
+  col.eff <- rainbow(nlevels(factor(pvals.part.joint$Effect.type))*ncol(pvals.sub.only), start=0.1, end=0.9)
+  names(roc.l) <- paste( rep( 1:3,each=ncol(pvals.sub.only) ) , rep( colnames(pvals.sub.only),nlevels(factor(pvals.part.joint$Effect.type)) ) )
+  roc.graph(roc.l,mycols=col.eff,main.title="", pdf=F)
+  text(x=0.3,y=0.2,labels=paste("Gene",gene))
+}
+
+```
+
+These ROC curves confirm the trend suggested by the boxplots, that the effects are more likely to be picked up with gene 1 than with gene 2. Since the effect matrices used are the same, this can only be due to the SNP correlation structure. 
+
+We now produce ROC curves of the multinomial test, including both results with $W \equiv I$ as with $W$ representing the SNP correlation. This corresponds to supplementary figure 5.
+
+```{r plot.roc.w, fig.width=10, fig.height=5}
+# This graph is used in the supp mat - it is supp figure 4
+# Select only the multinomial
+pvals.mat.i <- pvals.mat.i[, names(pvals.mat.i) != "p.norm.l"]
+names(pvals.mat.i)[ncol(pvals.mat.i)] <- "multin.i"
+pvals.part.i.w <- data.frame(pvals.mat.i, multin.w = pvals.mat.w[, "p.multin.w"])
+npvals <- 2 # the number of pvalues in the pvals.part.joint object
+# This involves here 2 columns with p-values, one corresponding to each test,
+# one based on the normal and one based on the multinomial
+# all(pvals.part.joint.w$Gene.index == pvals.part.joint.h0$Gene.index) # TRUE, so OK!
+# 
+par(mfrow=c(1, length(snp.data.l)), mar=c(5, 4, 1, 1))
+for(gene in 1:length(snp.data.l)) # nlevels(factor(pvals.part.joint$Gene.index)) )
+{ 
+  pvals.part.g <- pvals.part.i.w[pvals.part.i.w$Gene.index == gene, ]
+  roc.l <- vector("list", nlevels(factor(pvals.part.i.w$Effect.type))*npvals)
+  xi <- 1 # xi indexes the elements in the list; 
+  # 1 <=> eff=1, multinI; 2 <=> eff=1, multinW
+  # 3 <=> eff=2, multinI; 4 <=> eff=2, multinW
+  # 5 <=> eff=3, multinI; 6 <=> eff=3, multinW
+  for(eff in 1:nlevels(factor(pvals.part.i.w$Effect.type)) )
+  {
+    pvals.sub.mat <- pvals.part.g[pvals.part.g$Effect.type==eff, ]
+    pvals.sub.only <- pvals.sub.mat[, 6:7, drop=FALSE]
+    # get roc curve
+    for(xj in 1:ncol(pvals.sub.only))
+    {
+      roc.l[[xi]] <- roc.comp(pvals.sub.only[,xj],pvals.sub.mat[,1],alpha=seq(0,1,by=0.01))
+      xi <- xi+1
+    }
+  }
+  col.eff <- c("orange", "orangered", "deepskyblue", "blue", "mediumpurple2", "purple3" )
+  names(roc.l) <- paste( rep( 1:3, each=ncol(pvals.sub.only) ) , 
+                         rep( colnames(pvals.sub.only), nlevels(factor(pvals.part.i.w$Effect.type)) ) )
+  roc.graph(roc.l, mycols=col.eff, main.title="", pdf=F)
+  text(x=0.3, y=0.2, labels=paste("SNP data for gene", gene))
+}
+```
+
+Here a different seed was used, producing slightly different results than those in the manuscript. Reassuringly, this figure is qualitatively the same as the one in the manuscript: ROC curves for the SNP data of gene 1 are higher than those for the SNP data of gene 2. 
+
+For the current setup, with one-tenth of the exons being associated with the SNP genotypes, the biggest differences in terms of power are observed for gene 2, and S3, where a large number of SNPs is associated with the response. 
+
+We also make histograms and boxplots of the p-values of the genes without association between SNPs and exons. For a reference, genes with association are also plotted.
+
+```{r histogram.byEffect, fig.width = 10, fig.height = 5}
+par(mfrow = c(1, 2), mar=c(5, 4, 1, 1))
+hist(pvals.part.i.w$multin.i[pvals.part.i.w$sign==1], xlab = "p-value, responses with effect", main = "")
+hist(pvals.part.i.w$multin.i[pvals.part.i.w$sign==0], xlab = "p-value, responses no effect", main = "")
+```
+
+Reassuringly, p-values corresponding to data with no effect approximately follow a uniform distribution. The empirical distribution of p-values corresponding to data with effect, in contrast, are left-skewed, as expected.
+
+
+
+```{r boxplot.byEffectAndGene, fig.width = 10, fig.height = 5}
+par(mfrow = c(1, 2), mar=c(6, 4, 1, 1), las = 2)
+vlab <- paste0("Gene ", rep(1:2, 3), ", S", rep(1:3, each = 2))
+boxplot(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 0] ~ pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0]
+        + pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0], ylab = "p-values (W=I)", xaxt = "none",
+        xlab = "", col = col.eff)
+axis(side = 1, at = 1:6, labels = vlab)
+boxplot(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 0] ~ pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0]
+        + pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0], ylab = "p-values (empirical W)", xaxt = "none", 
+        xlab = "", col = col.eff)
+axis(side = 1, at = 1:6, labels = vlab)
+boxplot(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 1] ~ pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 1]
+        + pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 1], ylab = "p-values (W=I)", xaxt = "none",
+        xlab = "", col = col.eff)
+axis(side = 1, at = 1:6, labels = vlab)
+boxplot(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 1] ~ pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 1]
+        + pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 1], ylab = "p-values (empirical W)", xaxt = "none",
+        xlab = "", col = col.eff)
+axis(side = 1, at = 1:6, labels = vlab)
+```
+
+```{r boxplot.byEffectAndGene.noEffAsDots, fig.width = 10, fig.height = 5}
+par(mfrow = c(1, 2), mar=c(6, 4, 1, 1), las = 2)
+vlab <- paste0("Gene ", rep(1:2, 3), ", S", rep(1:3, each = 2))
+boxplot(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 0] ~ pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0]
+        + pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0], ylab = "p-values (W=I)", xaxt = "none",
+        xlab = "", col = col.eff)
+axis(side = 1, at = 1:6, labels = vlab)
+boxplot(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 0] ~ pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0]
+        + pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0], ylab = "p-values (empirical W)", xaxt = "none", 
+        xlab = "", col = col.eff)
+axis(side = 1, at = 1:6, labels = vlab)
+boxplot(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 1] ~ pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 1]
+        + pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 1], ylab = "p-values (W=I)", xaxt = "none",
+        xlab = "", col = col.eff)
+axis(side = 1, at = 1:6, labels = vlab)
+boxplot(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 1] ~ pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 1]
+        + pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 1], ylab = "p-values (empirical W)", xaxt = "none",
+        xlab = "", col = col.eff)
+axis(side = 1, at = 1:6, labels = vlab)
+```
+
+
+Now we compute the proportion of response vectors for which the result was below an FDR threshold, per situation.
+
+```{r def.prop.sign}
+sign.mat <- cbind(pvals.part.i.w$multin.i <= 0.01, 
+                  pvals.part.i.w$multin.i <= 0.05,
+                  pvals.part.i.w$multin.i <= 0.1,
+                  pvals.part.i.w$multin.w <= 0.01,
+                  pvals.part.i.w$multin.w <= 0.05,
+                  pvals.part.i.w$multin.w <= 0.1)
+colnames(sign.mat) <- c(paste0("multin.i", c("01", "05", "1")), paste0("multin.w", c("01", "05", "1")))
+sign.mat <- data.frame(sign.mat)
+
+# Proportions of tests below threshold, for response vectors with no effect
+
+prop.v.i.01 <- tapply(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 0] < 0.01, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+prop.v.i.05 <- tapply(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 0] < 0.05, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+prop.v.i.1 <- tapply(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 0] < 0.1, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+
+prop.v.w.01 <- tapply(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 0] < 0.01, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+prop.v.w.05 <- tapply(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 0] < 0.05, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+prop.v.w.1 <- tapply(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 0] < 0.1, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+# Matrix gathering all results
+prop.mat.v <- cbind(matrix(prop.v.i.01, nrow = 6)[, 1], matrix(prop.v.i.05, nrow = 6)[, 1],
+                    matrix(prop.v.i.1, nrow = 6)[, 1],  matrix(prop.v.w.01, nrow = 6)[, 1],
+                    matrix(prop.v.w.05, nrow = 6)[, 1], matrix(prop.v.w.1, nrow = 6)[, 1] )
+rownames(prop.mat.v) <- vlab
+vprop <- c("0.01", "0.05", "0.1")
+colnames(prop.mat.v) <- c(paste0("I", vprop), paste0("W", vprop))
+
+# Proportions of tests below threshold, for response vectors with effect 
+
+
+prop.s.i.01 <- tapply(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 1] < 0.01, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+prop.s.i.05 <- tapply(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 1] < 0.05, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+prop.s.i.1 <- tapply(pvals.part.i.w$multin.i[pvals.part.i.w$sign == 1] < 0.1, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+
+prop.s.w.01 <- tapply(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 1] < 0.01, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+prop.s.w.05 <- tapply(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 1] < 0.05, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+prop.s.w.1 <- tapply(pvals.part.i.w$multin.w[pvals.part.i.w$sign == 1] < 0.1, FUN = sum,
+                      INDEX = list(pvals.part.i.w$Gene.index[pvals.part.i.w$sign == 0],
+                                   pvals.part.i.w$Effect.type[pvals.part.i.w$sign == 0]))/100
+
+prop.mat.s <- cbind(matrix(prop.s.i.01, nrow = 6)[, 1], matrix(prop.s.i.05, nrow = 6)[, 1],
+                    matrix(prop.s.i.1, nrow = 6)[, 1],  matrix(prop.s.w.01, nrow = 6)[, 1],
+                    matrix(prop.s.w.05, nrow = 6)[, 1], matrix(prop.s.w.1, nrow = 6)[, 1] )
+rownames(prop.mat.s) <- vlab
+colnames(prop.mat.s) <- colnames(prop.mat.v)
+
+```
+
+The range of proportions selected in each case are, per cut-off used: 
+
+```{r print.range}
+round(apply(prop.mat.v, 2, range), 3)
+round(apply(prop.mat.s, 2, range), 3)
+```
+
+For completeness, the entire matrices are:
+
+```{r}
+round(prop.mat.v, 3)
+round(prop.mat.s, 3)
+```
+
+We can best visualise these proportions in a graph, which is supplementary figure 4:
+
+```{r plot.prop.sel.NullAndEffect, fig.width = 12, fig.height = 4}
+
+# col.eff, names(roc.l)
+mprop <- prop.mat.v
+vt <- c(0.01, 0.05, 0.1)
+par(mfrow = c(1, 3), mar=c(6, 4, 1, 1), las = 2)
+xi <- 1
+plot(1, 1, col = "white", xlim = c(0.5, 6.5), ylim = c(0, 1), xlab = "",
+     main = "Response vectors with no effect", ylab = paste("proportion p-value < ", vt[xi]), xaxt = 'none')
+   points(mprop[, xi], col = col.eff[xi], pch = 2)
+   points(mprop[, xi+3], col = col.eff[xi+3], pch = 6)
+axis(side = 1, at = 1:6, labels = vlab)
+legend("topleft", legend = c("W=I", "empirical W"), pch = c(2, 6), col = "black")
+legend("topright", legend = names(roc.l), fill = col.eff)
+segments(0, vt[xi], 6.5, vt[xi], lty = "dotted", lwd = 2, col = "grey")
+
+xi <- 2
+plot(1, 1, col = "white", xlim = c(0.5, 6.5), ylim = c(0, 1), xlab = "",
+     main = "Response vectors with no effect", ylab = paste("proportion p-value < ", vt[xi]), xaxt = 'none')
+   points(mprop[, xi], col = col.eff[xi], pch = 2)
+   points(mprop[, xi+3], col = col.eff[xi+3], pch = 6)
+axis(side = 1, at = 1:6, labels = vlab)
+legend("topleft", legend = c("W=I", "empirical W"), pch = c(2, 6), col = "black")
+legend("topright", legend = names(roc.l), fill = col.eff)
+segments(0, vt[xi], 6.5, vt[xi], lty = "dotted", lwd = 2, col = "grey")
+
+xi <- 3
+plot(1, 1, col = "white", xlim = c(0.5, 6.5), ylim = c(0, 1), xlab = "",
+     main = "Response vectors with no effect", ylab = paste("proportion p-value < ", vt[xi]), xaxt = 'none')
+   points(mprop[, xi], col = col.eff[xi], pch = 2)
+   points(mprop[, xi+3], col = col.eff[xi+3], pch = 6)
+axis(side = 1, at = 1:6, labels = vlab)
+legend("topleft", legend = c("W=I", "empirical W"), pch = c(2, 6), col = "black")
+legend("topright", legend = names(roc.l), fill = col.eff)
+segments(0, vt[xi], 6.5, vt[xi], lty = "dotted", lwd = 2, col = "grey")
+
+
+
+mprop <- prop.mat.s
+vt <- c(0.01, 0.05, 0.1)
+par(mfrow = c(1, 3), mar=c(6, 4, 1, 1), las = 2)
+xi <- 1
+plot(1, 1, col = "white", xlim = c(0.5, 6.5), ylim = c(0, 1), xlab = "",
+     main = "Response vectors with effect", ylab = paste("proportion p-value < ", vt[xi]), xaxt = 'none')
+   points(mprop[, xi], col = col.eff[xi], pch = 2)
+   points(mprop[, xi+3], col = col.eff[xi+3], pch = 6)
+axis(side = 1, at = 1:6, labels = vlab)
+legend("bottomleft", legend = c("W=I", "empirical W"), pch = c(2, 6), col = "black")
+legend("bottomright", legend = names(roc.l), fill = col.eff)
+segments(0, vt[xi], 6.5, vt[xi], lty = "dotted", lwd = 2, col = "grey")
+
+xi <- 2
+plot(1, 1, col = "white", xlim = c(0.5, 6.5), ylim = c(0, 1), xlab = "",
+     main = "Response vectors with effect", ylab = paste("proportion p-value < ", vt[xi]), xaxt = 'none')
+   points(mprop[, xi], col = col.eff[xi], pch = 2)
+   points(mprop[, xi+3], col = col.eff[xi+3], pch = 6)
+axis(side = 1, at = 1:6, labels = vlab)
+legend("bottomleft", legend = c("W=I", "empirical W"), pch = c(2, 6), col = "black")
+legend("bottomright", legend = names(roc.l), fill = col.eff)
+segments(0, vt[xi], 6.5, vt[xi], lty = "dotted", lwd = 2, col = "grey")
+
+xi <- 3
+plot(1, 1, col = "white", xlim = c(0.5, 6.5), ylim = c(0, 1), xlab = "",
+     main = "Response vectors with effect", ylab = paste("proportion p-value < ", vt[xi]), xaxt = 'none')
+   points(mprop[, xi], col = col.eff[xi], pch = 2)
+   points(mprop[, xi+3], col = col.eff[xi+3], pch = 6)
+axis(side = 1, at = 1:6, labels = vlab)
+legend("bottomleft", legend = c("W=I", "empirical W"), pch = c(2, 6), col = "black")
+legend("bottomright", legend = names(roc.l), fill = col.eff)
+segments(0, vt[xi], 6.5, vt[xi], lty = "dotted", lwd = 2, col = "grey")
+
+```
+
+
+
+
+We can also make plots to illustrate the empirical distribution of the p-values generated under $H_0$. 
+
+
+```{r plot.pvals.perEffSize, fig.width=12, fig.height=4}
+# Comparing null distributions
+par(mfrow=c(1,3))
+hist(pvals.mat.i[pvals.mat.i[, "sign.ind"]==0, "multin.i"], col="purple",
+     main="Multin I", xlab="p-values", breaks=20)
+hist(pvals.mat.w[pvals.mat.w[, "sign.ind"]==0, "p.multin.w"], col="purple4",
+     main="Multin W", xlab="p-values", breaks=20)
+dcols <- densCols(-log(pvals.mat.i[pvals.mat.i[, "sign.ind"]==0, "multin.i"]), 
+                  -log(pvals.mat.w [pvals.mat.w [, "sign.ind"]==0, "p.multin.w"]) )
+plot(-log(pvals.mat.i[pvals.mat.i[, "sign.ind"]==0, "multin.i"]), 
+     -log(pvals.mat.w [pvals.mat.w[, "sign.ind"]==0, "p.multin.w"]), 
+     pch=20, col=dcols, main="No effect",
+     xlab="-log p, multin I", ylab="-log p, multin W")
+segments(0, 0, 10, 10, lty="dashed", col="gray")
+#
+par(mfrow=c(1,3))
+hist(pvals.mat.i[pvals.mat.i[, "sign.ind"]==1, "multin.i"], col="purple",
+     main="Multin I", xlab="p-values", breaks=20)
+hist(pvals.mat.w[pvals.mat.w[, "sign.ind"]==1, "p.multin.w"], col="purple4",
+     main="Multin W", xlab="p-values", breaks=20)
+dcols <- densCols(-log(pvals.mat.i[pvals.mat.i[, "sign.ind"]==1, "multin.i"]), 
+                  -log(pvals.mat.w [pvals.mat.w [, "sign.ind"]==1, "p.multin.w"]) )
+plot(-log(pvals.mat.i[pvals.mat.i[, "sign.ind"]==1, "multin.i"]), 
+     -log(pvals.mat.w [pvals.mat.w [, "sign.ind"]==1, "p.multin.w"]), 
+     pch=20, col=dcols, main="With effect",
+     xlab="-log p, multin I", ylab="-log p, multin W")
+segments(0, 0, 10, 10, lty="dashed", col="gray")
+```
+
+
+We make new ROC curves, now grouping the results per test type (either multin.I or multin.W) and comparing the ROC curves for these two correlation patterns. This is figure 1 of the main text.
+
+```{r dirs.for.plot.below, eval = FALSE, echo = FALSE}
+myname <- "N10000_linkF_equalSetSizes_noStd_SNPIandIItheSame_2genes_diffEffects_10thExAff" # in this case we do not standardize effects
+myname2 <- "_largerNExAff_noStd_SNPIandIItheSame_diffEffects_10thExAff"
+myname1 <- "N10000_linkF_equalSetSizes_W_noStd_SNPIandIItheSame_2genes_diffEffects_10thExAff"
+mywdir <- "~/Documents/NKI/projects/spliceQTL/scripts server"
+load(paste(mywdir, "/analysis_multin_WandI_", myname, "_", myname2, ".RData", sep=""))
+```
+
+```{r eval = FALSE, echo = FALSE}
+# Objects below were previously loaded, but we here load them again for consistency
+mydir.output <- "/media/renee/Seagate Expansion Drive/Projects/altSplicing/output simul 2017" 
+rm(pvals.part.joint)
+load(paste(mydir.output, "/pvals_part_joint", myname, "_", myname2, ".RData", sep="")) # pvals.part.joint
+pvals.mat.i <- pvals.part.joint
+
+load(paste(mydir.output, "/pvals_part_joint", myname1, "_", myname2, ".RData", sep="")) # pvals.part.joint
+pvals.mat.w <- pvals.part.joint
+```
+
+```{r plot.roc2.w, fig.width=10, fig.height=5}
+# Select only the multinomial
+pvals.mat.i <- pvals.mat.i[, names(pvals.mat.i) != "p.norm.l"]
+names(pvals.mat.i)[ncol(pvals.mat.i)] <- "multin.i"
+pvals.part.i.w <- data.frame(pvals.mat.i, multin.w = pvals.mat.w[, "p.multin.w"])
+npvals <- 2 # the number of pvalues in the pvals.part.joint object
+# This involves here 2 columns with p-values, one corresponding to each test,
+# one based on the normal and one based on the multinomial
+# all(pvals.part.joint.w$Gene.index == pvals.part.joint.h0$Gene.index) # TRUE, so OK!
+# 
+par(mfrow=c(1, length(snp.data.l)), mar=c(5, 4, 1, 1))
+test.v <- c("multin.i", "multin.w")
+for(xw in 1:2) # nlevels(factor(pvals.part.joint$Gene.index)) )
+{ 
+  pvals.common <- pvals.part.i.w[, 1:5]
+  pvals.part.g <- pvals.part.i.w[, test.v[xw]]
+  pvals.part.g <- cbind(pvals.common, pvals.part.g)
+  roc.l <- vector("list", nlevels(factor(pvals.part.i.w$Gene.index))*npvals)
+  xi <- 1 # xi indexes the elements in the list; 
+  # 1 <=> eff=1, multinI; 2 <=> eff=1, multinW
+  # 3 <=> eff=2, multinI; 4 <=> eff=2, multinW
+  # 5 <=> eff=3, multinI; 6 <=> eff=3, multinW
+  for(eff in 1:nlevels(factor(pvals.part.i.w$Effect.type)) )
+  {
+    pvals.sub.mat <- pvals.part.g[pvals.part.g$Effect.type==eff, ]
+    pvals.sub.only <- cbind(pvals.sub.mat[pvals.sub.mat$Gene.index == 1, 6],
+                            pvals.sub.mat[pvals.sub.mat$Gene.index == 2, 6])
+    pvals.sub.mat <- pvals.sub.mat[pvals.sub.mat$Gene.index == 1, ]
+    # get roc curve
+    for(xj in 1:ncol(pvals.sub.only))
+    {
+      roc.l[[xi]] <- roc.comp(pvals.sub.only[,xj],pvals.sub.mat[,1],alpha=seq(0,1,by=0.01))
+      xi <- xi+1
+    }
+  }
+  col.eff <- c("orange", "orangered", "deepskyblue", "blue", "mediumpurple2", "purple3" )
+  names(roc.l) <- paste( rep( c("S1", "S2", "S3"), each=ncol(pvals.sub.only) ) , 
+                         rep( c("SNP gene 1", "SNP gene 2"), nlevels(factor(pvals.part.i.w$Effect.type)) ) )
+  roc.graph(roc.l, mycols=col.eff, main.title="", pdf=F)
+  text(x=0.3, y=0.2, labels=paste("test with", test.v[xw]))
+}
+```
+
+As the data simulated here uses a different seed compared to the one used for the manuscript figures, the ROC curves differ slightly. Reassuringly, however, they are qualitatively the same: we observe relatively more power for gene 1 compared to gene 2, and more power for S1 and S3 compared with S2.  
+
+
+
+
+## Pairwise testing
+
+For example 1 in the manuscript, We use linear regression for pairwise testing.  Below we include a code chunk where this can be run, using  exon-level data as well as SNP data.  Required objects to run it are:
+
+- `data.exp1`: a data.frame including a column with gene IDs, below with name `Gene_Symbol`
+
+- `data.exp.only`: a data.matrix containing the exon-level data (samples on columns, exons on rows) with rows corresponding to the same rows in `data.exp1`
+
+- `mat.snp.only`: data.matrix with SNP data (number of minor alleles), with samples on columns (in the same order as in `data.exp.only`) and SNPs on rows
+
+- `genes.used`: the ids of genes to be used - these ids are contained in the rownames of the selection  matrices
+
+- `mat.gexp.sel`: matrix of integers, with as many rows as genes, and two columns
+
+- `mat.snp.sel`:  matrix of integers, with as many rows as genes, and two columns
+
+More details about the input required can be found in file `f_spliceQTLfit.R`. 
+
+
+```{r eval = FALSE}
+data.exp1$Gene_Symbol <- factor(as.character(data.exp1$Gene_Symbol))  
+genes.used <- levels(data.exp1$Gene_Symbol)
+
+# tests to check function splice.eqtl.fit2 in script tests_g2multin_rhovec_muvec.R
+results.aspl <- sapply(1:length(genes.used), splice.eqtl.lreg,
+                       genes.used = genes.used, data.exp = data.exp.only, 
+                       data.snp = mat.snp.only, exp.sel = mat.gexp.sel, 
+                       snp.sel =  mat.snp.sel,what="lr",mydir=mydir.output.cov)
+```
+
+
+
+
+
+## Technical information
+
+```{r}
+sessionInfo()
+```
+
+

@@ -1,0 +1,35 @@
+** Scripts grouped according to subsection **
+
+Scripts used for all analyses in this manuscript are included here. They are organized as follows:
+
+- simulation: folder with analyses for the simulation study - with these files figure 1 and supplementary figures 2-5
+
+- analysis: folder with analyses of the GEUVADIS data, example 1 - with these files figures 2 and 3 and supplementary figure 6 can be produced
+
+- analysis geuv lls: folder with analyses presented in example 2, with the spliceQTL analyses separate from the analyses using pairwise testing - with these files supplementary figures 8-15 can be produced
+
+
+** Masterscripts **
+
+In each folder, a master script is included to run all analyses is provided. This is either a .R file or a .Rmd file (with comments and code chunks). In case a .Rmd file is provided, the corresponding processed report (a .html file with the same name) is also included. In each master script parts used to produced specific figures are indicated clearly.
+
+The master script includes the output of sessionInfo() in all cases. For clarity, R 3.6.3 was the last version to produce the latest results.
+
+
+** Folder content **
+
+Each folder also includes the following subfolders:
+
+-- "data": includes data and other objects required as input to run scripts are stored
+
+-- "scripts": includes scripts required to run analyses
+
+-- "output": stores output generated - this is provided empty in most cases, as all objects should be generated when running the master script, except for those objects which results from analyses previously done, provided to ensure quicker checks of the results
+
+
+** Data availability **
+
+GEUVADIS data for example 1 is made available here, but it can also be downloaded from the EBI.
+
+LLS data is available upon request for researchers from BBMRI  (see "main_geuv_lls.Rmd" in the "analysis geuv lls" folder). To illustrate how the data was analysed, both using the spliceQTL test as well as pairwise tests (here a linear regression), we include the script "main_geuv_lls_lreg.R" in the "analysis geuv lls/scripts" folder. This can be used to analyse other datasets.
+
