@@ -3,18 +3,15 @@
 # with W estimated from the data  
 # The GEUVADIS data for chromosome 1 is used
 
-# This script is based on main_analysis_spliceQTL.R
-# `mydrive` should contain the path to this file
-mydir <- "~/Documents/NKI/projects/spliceQTL/man 2020/BiomJ/code and data/analysis/"
+library(here)
 #
-mydir.scripts <- paste0(mydir, "scripts")
-mydir.data <- paste0(mydir, "data")
-mydir.output <-  paste0(mydir, "output")
+mydir.scripts <- here("inst", "scripts")
+mydir.data <- here("inst",  "data")
+mydir.output <-  here("inst",  "output")
 mydir.output.perGene <- mydir.output
 
 myname <- "ObsData_Multin_W"
 
-setwd(mydir)
 library(globaltest)
 
 source(paste0(mydir.scripts, "/load_objects_spliceQTL.R")) 
@@ -29,19 +26,7 @@ source(paste0(mydir.scripts, "/checks_Nexons_Nsnps.R"))
 ### Run model, per gene, using all exons and all SNPs
 source(paste0(mydir.scripts, "/run_fit_spliceqtl.R"))
 
-# To load main test results, various objects `v.results` are available, with
-# 3 values of permutations each (10^2, 10^3, 10^5) as defined in "load_objects_spliceQTL.R":
-
-# Using normal distribution and assuming SNPs are uncorrelated under H_0:
-#load(paste0(mydir.output,"/spliceQTL_fit_VariousNperm_Counts_Norm_I.RData")) 
-# Using normal distribution and taking the empirical corr. matrix for the SNPs:
-#load(paste0(mydir.output,"/spliceQTL_fit_VariousNperm_Counts_Norm_W.RData")) 
-# Using multinomial distribution and assuming SNPs are uncorrelated under H_0:
-#load(paste0(mydir.output,"/spliceQTL_fit_VariousNperm_Counts_Multin_I.RData")) 
-# Using multinomial distribution and taking the empirical corr. matrix for the SNPs:
-#load(paste0(mydir.output,"/spliceQTL_fit_VariousNperm_Counts_Multin_W.RData")) 
-
-# Results presented in the article refer to the multinomial test with W, so we load:
+# Results presented in the article can be loaded directly:
 load(paste0(mydir.output, "/spliceQTL_fit_VariousNperm_Multin_W.RData"))
 
 source(paste0(mydir.scripts, "/merge_results_tables.R"))
