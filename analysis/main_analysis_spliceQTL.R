@@ -1,18 +1,19 @@
-# main_analysis_Multin_W.R
+# 
 # This script preprocesses the data and applies the multinomial test, 
 # with W estimated from the data  
 # The GEUVADIS data for chromosome 1 is used
 
-library(here)
+mydir <- "~/Documents/NKI/projects/spliceQTL/data and code/analysis"
 #
-mydir.scripts <- here("inst", "scripts")
-mydir.data <- here("inst",  "data")
-mydir.output <-  here("inst",  "output")
+mydir.scripts <- file.path(mydir, "scripts")
+mydir.data <- file.path(mydir,  "data")
+mydir.output <-  file.path(mydir,  "output")
 mydir.output.perGene <- mydir.output
 
 myname <- "ObsData_Multin_W"
 
 library(globaltest)
+library(gplots)
 
 source(paste0(mydir.scripts, "/load_objects_spliceQTL.R")) 
 # In the script we load objects, and leave out YRI samples
@@ -24,7 +25,8 @@ source(paste0(mydir.scripts, "/make_selection_matrices_strand.R"))  # produce se
 source(paste0(mydir.scripts, "/checks_Nexons_Nsnps.R"))
 
 ### Run model, per gene, using all exons and all SNPs
-source(paste0(mydir.scripts, "/run_fit_spliceqtl.R"))
+# The following script can be skipped for a test run
+#source(paste0(mydir.scripts, "/run_fit_spliceqtl.R"))
 
 # Results presented in the article can be loaded directly:
 load(paste0(mydir.output, "/spliceQTL_fit_VariousNperm_Multin_W.RData"))
@@ -37,11 +39,11 @@ source(paste0(mydir.scripts, "/merge_results_tables.R"))
 source(paste0(mydir.scripts, "/graphs_spliceQTL_results_W.R")) # here establish threshold and select genes, leave graphs out
 ## Select some genes to work further
 
+### Run tests per exon within each selected gene - this may take a while to run
 source(paste0(mydir.scripts, "/model_fit_eqtl_factors_W.R")) 
 # here we extract p-values per exon, for each selected gene 
 # per run, exon chosen represents successes, and the sum of all other exons represent failures
 
-require("gplots")
 
 # The script below may take a while to run, as it produces graphs per gene
 # Each time, it computes the Spearman correlations between all pairs of SNPs and exons,
