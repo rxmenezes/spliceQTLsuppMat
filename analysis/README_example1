@@ -1,0 +1,23 @@
+README specific for the analysis code and data for example 1
+
+On line 30 of main_analysis_spliceQTL.R, results obtained with the multinomial test with R are loaded.
+
+Various other  objects `v.results` produced with other settings are also available, with
+ 3 values of permutations each (10^2, 10^3, 10^5) as defined in "load_objects_spliceQTL.R".
+
+ - Using normal distribution and assuming SNPs are uncorrelated under H_0:
+
+load(paste0(mydir.output,"/spliceQTL_fit_VariousNperm_Counts_Norm_I.RData")) 
+
+ - Using normal distribution and taking the empirical corr. matrix for the SNPs:
+
+load(paste0(mydir.output,"/spliceQTL_fit_VariousNperm_Counts_Norm_W.RData")) 
+
+ - Using multinomial distribution and assuming SNPs are uncorrelated under H_0:
+
+load(paste0(mydir.output,"/spliceQTL_fit_VariousNperm_Counts_Multin_I.RData")) 
+
+ - Using multinomial distribution and taking the empirical corr. matrix for the SNPs:
+
+load(paste0(mydir.output,"/spliceQTL_fit_VariousNperm_Counts_Multin_W.RData")) 
+
