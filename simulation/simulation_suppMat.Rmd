@@ -128,7 +128,7 @@ prop.aff <- c(0.02, 0.02, 0.20) # proportion of SNPs with an effect for the 3 si
 eff.size <- c(5, 1, 1) # effect size, or beta values to be considered, for the 3 situations
 ```
 
-Now put together the matrix with effects `B`, here denoted by object `Bl` to refer to the larger number of exons (50). In the code chunk below SNP effects are generated. To reproduce the published figures exacly, we load in the subsequent code chunk the original objects.
+Now put together the matrix with effects `B`, here denoted by object `Bl` to refer to the larger number of exons (50). In the code chunk below SNP effects are generated. To reproduce the published figures exactly, we load in the subsequent code chunk the original objects.
 
 ```{r def.BL, eval = FALSE}
 new.nrow <- min(unlist( lapply(snp.data.l, nrow) ))
@@ -926,10 +926,6 @@ for(xw in 1:2) # nlevels(factor(pvals.part.joint$Gene.index)) )
   text(x=0.3, y=0.2, labels=paste("test with", test.v[xw]))
 }
 ```
-
-As the data simulated here uses a different seed compared to the one used for the manuscript figures, the ROC curves differ slightly. Reassuringly, however, they are qualitatively the same: we observe relatively more power for gene 1 compared to gene 2, and more power for S1 and S3 compared with S2.  
-
-
 
 
 ## Pairwise testing
