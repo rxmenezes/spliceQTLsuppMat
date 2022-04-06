@@ -39,3 +39,10 @@ GEUVADIS data for example 1 is made available here, but it can also be downloade
 
 LLS data is available upon request for researchers from BBMRI  (see "main_geuv_lls.Rmd" in the "analysis geuv lls" folder). To illustrate how the data was analysed, both using the spliceQTL test as well as pairwise tests (here a linear regression), we include the script "main_geuv_lls_lreg.R" in the "analysis geuv lls/scripts" folder. This can be used to analyse other datasets.
 
+** R version and system **
+
+These scripts were successfully run in R 3.6.3 and 4.1. 
+
+Some analysis steps take considerable time to run, and for reproducibility checks we have included intermediate results, enabling quicker reproduction of figures in the manuscript.
+
+
