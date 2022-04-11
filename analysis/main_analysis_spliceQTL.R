@@ -4,6 +4,8 @@
 # The GEUVADIS data for chromosome 1 is used
 
 mydir <- "~/Documents/NKI/projects/spliceQTL/data and code/analysis"
+mydir <- "~/Documents/NKI/projects/spliceQTL/man 2020/BiomJ/codeTest/spliceQTLsuppMat/analysis"
+
 #
 mydir.scripts <- file.path(mydir, "scripts")
 mydir.data <- file.path(mydir,  "data")
@@ -14,6 +16,7 @@ myname <- "ObsData_Multin_W"
 
 library(globaltest)
 library(gplots)
+library(lme4)
 
 source(paste0(mydir.scripts, "/load_objects_spliceQTL.R")) 
 # In the script we load objects, and leave out YRI samples
@@ -72,9 +75,4 @@ source(paste0(mydir.scripts, "/model_fit_eqtl_factors_perExonAndSNP.R")) # only 
 ###
 source(paste0(mydir.scripts, "/graphs_spliceQTLfactor_results_W_forPresentation.R"))
 
-###
-# Below figures 2, 3 can also be produced, as well as supplementary figure 6
-###
-
-source(paste0(mydir.scripts, "/graphs_PerGene.R"))
 
