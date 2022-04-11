@@ -13,7 +13,7 @@ Scripts used for all analyses in this manuscript are included here. They are org
 
 In each folder, a master script is included to run all analyses is provided. This is either a .R file or a .Rmd file (with comments and code chunks). In case a .Rmd file is provided, the corresponding processed report (a .html file with the same name) is also included. In each master script parts used to produced specific figures are indicated clearly.
 
-The master script includes the output of sessionInfo() in all cases. For clarity, R 4.1 was the last version to produce the latest results.
+In case the master script is a .Rmd, it includes the output of sessionInfo(). For clarity, R 4.1 was the version used to produce the latest results.
 
 ** File paths **
 
@@ -44,5 +44,10 @@ LLS data is available upon request for researchers from BBMRI  (see "main_geuv_l
 These scripts were successfully run in R 3.6.3 and 4.1. 
 
 Some analysis steps take considerable time to run, and for reproducibility checks we have included intermediate results, enabling quicker reproduction of figures in the manuscript.
+
+** This repo uses git lfs **
+
+This means that large files are stored separately, but this is invisible to any user. To repeat analyses, please clone the repo on a local machine, which will copy all files, including large ones.
+
 
 
