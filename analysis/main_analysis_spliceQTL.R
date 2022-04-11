@@ -3,7 +3,7 @@
 # with W estimated from the data  
 # The GEUVADIS data for chromosome 1 is used
 
-mydir <- "~/Documents/NKI/projects/spliceQTL/data and code/analysis"
+mydir <- "~/Documents/NKI/projects/spliceQTL/man 2020/BiomJ/data and code/analysis"
 mydir <- "~/Documents/NKI/projects/spliceQTL/man 2020/BiomJ/codeTest/spliceQTLsuppMat/analysis"
 
 #
@@ -75,4 +75,9 @@ source(paste0(mydir.scripts, "/model_fit_eqtl_factors_perExonAndSNP.R")) # only 
 ###
 source(paste0(mydir.scripts, "/graphs_spliceQTLfactor_results_W_forPresentation.R"))
 
+###
+# Below supplementary figure 6 is produced
+###
+
+source(paste0(mydir.scripts, "/graphs_exonExpLengthDep.R"))
 
