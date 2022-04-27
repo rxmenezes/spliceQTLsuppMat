@@ -19,7 +19,7 @@ In case the master script is a .Rmd, it includes the output of sessionInfo(). Fo
 
 In folders "simulation" and "analysis geuv lls" the master script is a .Rmd file and makes use of relative paths to assess other scripts, read in data and write out results.
 
-In folder "analysis" the master script is the "main_analysis_spliceQTL.R" file. In it a user should define a variable called "mydir" (line 6) with the local path to the file, to be able to run the entire script. Note that these analyses take considerable time to run. Where possible, file with intermediate results are provided so as to speed up checks.
+In folder "analysis" the master script is the "main_analysis_spliceQTL.R" file. If run using source() all file paths will be correct. If run step-by-step on the console,  a user should define a variable called "mydir" (line 6) with the local path to the file, to be able to run the entire script. Note that these analyses take considerable time to run. Where possible, file with intermediate results are provided so as to speed up checks.
 
 
 ** Folder content **

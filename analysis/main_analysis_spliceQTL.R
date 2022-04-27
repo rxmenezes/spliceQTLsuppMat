@@ -3,8 +3,7 @@
 # with W estimated from the data  
 # The GEUVADIS data for chromosome 1 is used
 
-mydir <- "~/Documents/NKI/projects/spliceQTL/man 2020/BiomJ/data and code/analysis"
-mydir <- "~/Documents/NKI/projects/spliceQTL/man 2020/BiomJ/codeTest/spliceQTLsuppMat/analysis"
+mydir <- getwd()
 
 #
 mydir.scripts <- file.path(mydir, "scripts")
