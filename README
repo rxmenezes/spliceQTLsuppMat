@@ -39,15 +39,74 @@ GEUVADIS data for example 1 is made available here, but it can also be downloade
 
 LLS data is available upon request for researchers from BBMRI  (see "main_geuv_lls.Rmd" in the "analysis geuv lls" folder). To illustrate how the data was analysed, both using the spliceQTL test as well as pairwise tests (here a linear regression), we include the script "main_geuv_lls_lreg.R" in the "analysis geuv lls/scripts" folder. This can be used to analyse other datasets.
 
-** R version and system **
-
-These scripts were successfully run in R 3.6.3 and 4.1. 
-
-Some analysis steps take considerable time to run, and for reproducibility checks we have included intermediate results, enabling quicker reproduction of figures in the manuscript.
-
 ** This repo uses git lfs **
 
 This means that large files are stored separately, but this is invisible to any user. To repeat analyses, please clone the repo on a local machine, which will copy all files, including large ones.
+
+
+** R version and system **
+
+These scripts were successfully run using R 3.6.3 as well as 4.1. 
+
+The simulation study master script includes the following in the output of sessionInfo(), at the end of the report:
+
+## Matrix products: default
+## BLAS:   /usr/lib/x86_64-linux-gnu/blas/libblas.so.3.9.0
+## LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.9.0
+## 
+## locale:
+##  [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=nl_NL.UTF-8        LC_COLLATE=en_US.UTF-8    
+##  [5] LC_MONETARY=nl_NL.UTF-8    LC_MESSAGES=en_US.UTF-8   
+##  [7] LC_PAPER=nl_NL.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=nl_NL.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## other attached packages:
+## [1] snowfall_1.84-6.1 snow_0.4-3       
+## 
+## loaded via a namespace (and not attached):
+##  [1] digest_0.6.29      R6_2.5.0           jsonlite_1.7.2     magrittr_2.0.1    
+##  [5] evaluate_0.14      KernSmooth_2.23-17 highr_0.9          stringi_1.6.2     
+##  [9] rlang_0.4.12       jquerylib_0.1.4    bslib_0.2.5.1      rmarkdown_2.9     
+## [13] tools_3.6.3        stringr_1.4.0      parallel_3.6.3     xfun_0.24         
+## [17] yaml_2.2.1         fastmap_1.1.0      compiler_3.6.3     htmltools_0.5.2   
+## [21] knitr_1.33         sass_0.4.0
+
+The analysis geuv lls master script "main_analysis.Rmd" includes the following in the output of sessionInfo(), at the end of the report (html):
+
+## R version 4.1.1 (2021-08-10)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 20.04.3 LTS
+## 
+## Matrix products: default
+## BLAS:   /usr/lib/x86_64-linux-gnu/blas/libblas.so.3.9.0
+## LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.9.0
+## 
+## locale:
+##  [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=nl_NL.UTF-8        LC_COLLATE=en_US.UTF-8    
+##  [5] LC_MONETARY=nl_NL.UTF-8    LC_MESSAGES=en_US.UTF-8   
+##  [7] LC_PAPER=nl_NL.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=nl_NL.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## loaded via a namespace (and not attached):
+##  [1] digest_0.6.29      R6_2.5.1           jsonlite_1.8.0     magrittr_2.0.2    
+##  [5] evaluate_0.15      KernSmooth_2.23-20 highr_0.9          rlang_1.0.2       
+##  [9] stringi_1.7.6      jquerylib_0.1.4    bslib_0.3.1        rmarkdown_2.13    
+## [13] tools_4.1.1        stringr_1.4.0      xfun_0.30          yaml_2.3.5        
+## [17] fastmap_1.1.0      compiler_4.1.1     htmltools_0.5.2    knitr_1.38        
+## [21] sass_0.4.1
+
+Some analysis steps take considerable time to run, and for reproducibility checks we have included intermediate results, enabling quicker reproduction of figures in the manuscript.
+
 
 
 
