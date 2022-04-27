@@ -16,9 +16,9 @@ dim(aspl.overl) # 64   3 for normal, 34  3 for multin.W
 cutoff.exon <- myalpha/( sum(aspl.overl[,1]) + sum(!is.na(res.all[,3])) ) # 2.3 x 10-5 after shift, 2.788622e-05 for multin.W
 # results.aspl.factors, chr 1 only, no 1-exon genes, my.nperm=10000 - 55 genes with no shift, 66 with shift
 
-# We now make 1 graph per page, to use in the presentation
-list.sel <- c("ENSG00000007341.12","ENSG00000008128.15","ENSG00000116171.11") # this is now the list of gene IDs for which we want to make graphs
-
+# We now make 1 heatmap per gene with ID in the following list
+list.sel <- c("ENSG00000007341.12", "ENSG00000131236.11") 
+# Other gene ids used previously: "ENSG00000008128.15","ENSG00000116171.11"
 for(xi in list.sel)
 {
     ###
@@ -30,11 +30,17 @@ for(xi in list.sel)
     exon.ann.sel <- exon.ann1[ sel.gexp[1] : sel.gexp[2] , ]
     snp.sel <- mat.snp.only[ sel.snp[1] : sel.snp[2] , ]
     my.ann <- data.snp.ann[ sel.snp[1] : sel.snp[2] , ]
-    g2.pval <- aspl.overl[xi,]
+    g2.pval <- res.all[xi, ]
     pvals.exons <- results.aspl.factors[[xi]]
     cols.sign <- c("blue","gray")
-    col.pvals.exons <- as.character( cut(pvals.exons,breaks=c(0,cutoff.exon,1),labels= cols.sign ) )
-    sel.exons <- pvals.exons <= cutoff.exon
+    if(!is.null(pvals.exons)) {
+        col.pvals.exons <- as.character( cut(pvals.exons,breaks=c(0,cutoff.exon,1),labels= cols.sign ) )
+        sel.exons <- pvals.exons <= cutoff.exon
+    } else {
+        col.pvals.exons <- rep(cols.sign[2], g2.pval[1])
+        sel.exons <- rep(FALSE, g2.pval[1])
+    }
+    
     pdf(paste(mydir.output.perGene,"/heatmap_exonAndSNPCors_gene_",xi,".pdf",sep=""),width=10,height=6)
     
     ###
