@@ -26,6 +26,8 @@ source(paste0(mydir.scripts, "/make_selection_matrices_strand.R"))  # produce se
 
 source(paste0(mydir.scripts, "/checks_Nexons_Nsnps.R"))
 
+source(paste0(mydir.scripts, "/make_suppFigure3.R"))
+
 ### Run model, per gene, using all exons and all SNPs
 # The following script can be skipped for a test run
 #source(paste0(mydir.scripts, "/run_fit_spliceqtl.R"))
