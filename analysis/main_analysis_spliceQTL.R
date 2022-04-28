@@ -82,3 +82,8 @@ source(paste0(mydir.scripts, "/graphs_spliceQTLfactor_results_W_forPresentation.
 
 source(paste0(mydir.scripts, "/graphs_exonExpLengthDep.R"))
 
+###
+# Below supplementary table 3 is produced
+###
+
+source(paste0(mydir.scripts, "/make_suppTable3.R"))
