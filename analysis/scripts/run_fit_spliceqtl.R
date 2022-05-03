@@ -33,6 +33,7 @@ v.results <- vector("list",length(v.nperm))
 # to compute the test with W=I
 # Use multin = FALSE to use the test based on the normal distribution
 
+set.seed(seed = 583624)
 for(xj in 1:length(v.nperm))
 {
     my.nperm <- v.nperm[ xj ]

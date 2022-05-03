@@ -47,7 +47,8 @@ source(paste0(mydir.scripts, "/graphs_spliceQTL_results_W.R")) # here establish 
 source(paste0(mydir.scripts, "/model_fit_eqtl_factors_W.R")) 
 # here we extract p-values per exon, for each selected gene 
 # per run, exon chosen represents successes, and the sum of all other exons represent failures
-
+# Results can also be loaded directly using
+# load(paste0(mydir.output,"/spliceQTL_fit_factorized_multin_W.RData",sep=""))
 
 # The script below may take a while to run, as it produces graphs per gene
 # Each time, it computes the Spearman correlations between all pairs of SNPs and exons,
@@ -65,10 +66,6 @@ source(paste0(mydir.scripts, "/model_fit_eqtl_factors_perExonAndSNP.R")) # only 
 # Add these all up
 # For genes that are significant: repeat this for the exons that are NOT significant, adding them up
 
-# Results we obtained can be loaded below:
-# load(paste0(mydir.output,"/spliceQTL_fit_factorized_multin_W.RData")) # results.aspl.factors
-# This object is a result of analysing 1378 genes,with my.nperm=10000 - 56 genes selected
-
 # In the script below graphs per gene can be produced
 # Change the gene ids as desired
 ###
@@ -83,7 +80,7 @@ source(paste0(mydir.scripts, "/graphs_spliceQTLfactor_results_W_forPresentation.
 source(paste0(mydir.scripts, "/graphs_exonExpLengthDep.R"))
 
 ###
-# Below supplementary table 3 is produced
+# Below supplementary table 4 is produced
 ###
 
-source(paste0(mydir.scripts, "/make_suppTable3.R"))
+source(paste0(mydir.scripts, "/make_suppTable4.R"))
