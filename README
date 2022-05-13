@@ -2,9 +2,9 @@
 
 Scripts used for all analyses in this manuscript are included here. They are organized as follows:
 
-- "simulation": folder with analyses for the simulation study - with these files figure 1 and supplementary figures 2-5
+- "simulation": folder with analyses for the simulation study - with these files figure 1 and supplementary figures 2, 4 and 5
 
-- "analysis": folder with analyses of the GEUVADIS data, example 1 - with these files figures 2 and 3 and supplementary figure 6 can be produced
+- "analysis": folder with analyses of the GEUVADIS data, example 1 - with these files figures 2 and 3, supplementary figures 3 and 6 and supplementary table 4 can be produced
 
 - "analysis geuv lls": folder with analyses presented in example 2, with the spliceQTL analyses separate from the analyses using pairwise testing - with these files supplementary figures 8-15 can be produced
 
