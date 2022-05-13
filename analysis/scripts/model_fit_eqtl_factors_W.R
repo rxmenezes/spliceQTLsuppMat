@@ -11,11 +11,10 @@ mat.gexp.sel2 <- mat.gexp.sel[list.sel,]
 mat.snp.sel2 <- mat.snp.sel[list.sel,]
 # Since the 11 genes with empty windows, or NAs in the snp selection matrices, have been left out, we should have no NAs in the mat.snp.sel2
 
-date()
 set.seed(seed = 305836)
 results.aspl.factors <- sapply(1:length(list.sel),splice.eqtl.factor.w,data.exp = data.exp.only, data.snp = mat.snp.only, 
                           exp.sel = mat.gexp.sel2, snp.sel =  mat.snp.sel2,w.type="cov",nperm=10^5)
-date()
+
 names(results.aspl.factors) <- list.sel
 # This is now a list, as for each gene we have a different number of exons/responses
 save(results.aspl.factors, 
